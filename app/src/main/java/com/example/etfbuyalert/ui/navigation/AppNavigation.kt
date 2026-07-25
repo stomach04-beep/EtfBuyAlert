@@ -39,7 +39,7 @@ fun AppNavigation(viewModel: MainViewModel) {
     val lastSyncOk by viewModel.lastSyncOk.collectAsStateWithLifecycle()
     val lastSyncError by viewModel.lastSyncError.collectAsStateWithLifecycle()
     val lastSyncAt by viewModel.lastSyncAt.collectAsStateWithLifecycle()
-    val groupMode by viewModel.groupMode.collectAsStateWithLifecycle()
+    val watchTab by viewModel.watchTab.collectAsStateWithLifecycle()
     val notifications by viewModel.notifications.collectAsStateWithLifecycle()
     val chart by viewModel.chart.collectAsStateWithLifecycle()
     val chartLoading by viewModel.chartLoading.collectAsStateWithLifecycle()
@@ -92,7 +92,15 @@ fun AppNavigation(viewModel: MainViewModel) {
             }
         }
 
-        NavHost(navController, startDestination = startRoute, modifier = Modifier.padding(innerPadding)) {
+        // ★上の余白は入れない（bottomのみ）。
+        //   この Scaffold は topBar を持たないので innerPadding の top にはステータスバー分の
+        //   余白が入るが、各画面の TopAppBar も自前で同じ余白を足すため、両方効かせると
+        //   タイトルの上に空の帯が二重にできる。TopAppBar 側に任せる。
+        NavHost(
+            navController,
+            startDestination = startRoute,
+            modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()),
+        ) {
             composable(BottomNavItem.Watch.route) {
                 WatchListScreen(
                     etfStates = etfStates,
@@ -100,8 +108,8 @@ fun AppNavigation(viewModel: MainViewModel) {
                     lastSyncOk = lastSyncOk,
                     lastSyncError = lastSyncError,
                     lastSyncAt = lastSyncAt,
-                    groupMode = groupMode,
-                    onGroupModeChange = { viewModel.setGroupMode(it) },
+                    watchTab = watchTab,
+                    onWatchTabChange = { viewModel.setWatchTab(it) },
                     onRefresh = { viewModel.refreshData() },
                     onEtfClick = { ticker -> navController.navigate("detail/$ticker") }
                 )

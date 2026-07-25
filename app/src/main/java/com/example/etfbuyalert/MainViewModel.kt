@@ -32,12 +32,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    // --- 監視タブのグループ表示モード（テーマ別 / 状況別）---
-    private val _groupMode = MutableStateFlow(Settings.groupMode(app))
-    val groupMode: StateFlow<String> = _groupMode.asStateFlow()
-    fun setGroupMode(mode: String) {
-        Settings.prefs(getApplication()).edit().putString(Settings.KEY_GROUP_MODE, mode).apply()
-        _groupMode.value = mode
+    // --- 監視タブの絞り込み（すべて / 発火中 / 米国株 / 日本株 / ETF）---
+    private val _watchTab = MutableStateFlow(Settings.watchTab(app))
+    val watchTab: StateFlow<String> = _watchTab.asStateFlow()
+    fun setWatchTab(tab: String) {
+        Settings.prefs(getApplication()).edit().putString(Settings.KEY_WATCH_TAB, tab).apply()
+        _watchTab.value = tab
     }
 
     // --- 同期状態（バナー表示用）---

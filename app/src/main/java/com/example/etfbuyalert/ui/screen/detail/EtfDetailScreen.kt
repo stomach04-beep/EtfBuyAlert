@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import com.example.etfbuyalert.data.model.ChartSeries
 import com.example.etfbuyalert.data.model.EtfState
 import com.example.etfbuyalert.domain.AlertEngine
+import com.example.etfbuyalert.domain.Freshness
 import com.example.etfbuyalert.domain.Money
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -72,8 +73,19 @@ fun EtfDetailScreen(
         ) {
             // 銘柄名・現在値
             Text(state.name, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(verticalAlignment = Alignment.Bottom) {
+            // 鮮度ガード：7日超の古い価格は「現在値」として出さない（判定・文言はdomain.Freshnessが単一の真実の源）
+            if (Freshness.isInvalid(state.asOf)) {
+                Text(Freshness.INVALID_TEXT, fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                    color = COLOR_STOP)
+            } else Row(verticalAlignment = Alignment.Bottom) {
                 Text(Money.format(state.ticker, state.price), fontWeight = FontWeight.Bold, fontSize = 24.sp)
+                // 3日超は「（◯日前の値）」を添えて、最新値と誤解させない
+                val staleNote = Freshness.staleSuffix(state.asOf)
+                if (staleNote.isNotEmpty()) {
+                    Spacer(Modifier.width(4.dp))
+                    Text(staleNote, fontSize = 12.sp, color = Color(0xFFFFB74D),
+                        modifier = Modifier.padding(bottom = 3.dp))
+                }
                 Spacer(Modifier.width(8.dp))
                 if (state.previousClose != null && state.price != null && state.previousClose != 0.0) {
                     val diff = (state.price - state.previousClose) / state.previousClose * 100.0

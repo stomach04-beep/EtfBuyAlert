@@ -20,6 +20,10 @@ object NotificationHelper {
 
     private const val CHANNEL_ALERT = "etf_alert"     // 押し目・深押し・損切り・順張り（重要）
     private const val CHANNEL_SUMMARY = "etf_summary"  // 毎朝サマリ（通常）
+    private const val BUNDLE_ID = 8001                 // まとめ通知の固定ID（次のまとめで置き換え）
+
+    // まとめ通知用の1件ぶんのアラート（domainに依存しないよう単純な入れ物）
+    data class AlertItem(val category: String, val title: String, val message: String)
 
     private const val HISTORY_FILE = "notification_history.json"
     private const val MAX_HISTORY = 100
@@ -50,6 +54,35 @@ object NotificationHelper {
             NotificationCompat.PRIORITY_HIGH)
     }
 
+    // 複数アラートをまとめて送信。
+    // 1つの価格チェックで複数銘柄が同時にライン到達すると通知が何件も飛んでくるため、
+    // 2件以上なら「まとめ通知1件」に集約する（1件だけなら従来どおり個別通知）。
+    // 履歴タブでは銘柄別に見たいので、履歴には各件を個別に残す。
+    fun sendAlerts(context: Context, items: List<AlertItem>) {
+        if (items.isEmpty()) return
+
+        // 履歴は1件ずつ追記（通知はまとめても履歴は銘柄別に残す）
+        for (it in items) appendHistory(context, it.category, it.title, it.message)
+
+        if (items.size == 1) {
+            // 1件だけなら従来どおり個別通知（ticker+categoryごとの安定ID）
+            val it = items[0]
+            val notifyId = 10000 + abs((it.title + it.category).hashCode() % 80000)
+            postNotification(context, CHANNEL_ALERT, it.title, it.message, notifyId,
+                NotificationCompat.PRIORITY_HIGH)
+            return
+        }
+
+        // 2件以上は1件のまとめ通知に集約
+        // （深刻な順＝損切り→深押し→押し目→過熱利確②→過熱利確①→順張り→他 で並べる）
+        val order = listOf("損切り", "深押し", "押し目", "過熱利確②", "過熱利確①", "順張り", "ステージ変化")
+        val sorted = items.sortedBy { order.indexOf(it.category).let { i -> if (i < 0) order.size else i } }
+        val title = "買い時アラート ${items.size}件"
+        val body = sorted.joinToString("\n") { "・${it.title}" }
+        postNotification(context, CHANNEL_ALERT, title, body, BUNDLE_ID,
+            NotificationCompat.PRIORITY_HIGH)
+    }
+
     // 毎朝サマリを送信
     fun sendMorningSummary(context: Context, title: String, message: String) {
         notifyNow(context, CHANNEL_SUMMARY, title, message, 7001, "朝サマリ",
@@ -68,6 +101,15 @@ object NotificationHelper {
         context: Context, channel: String, title: String, message: String,
         notifyId: Int, category: String, priority: Int
     ) {
+        appendHistory(context, category, title, message)
+        postNotification(context, channel, title, message, notifyId, priority)
+    }
+
+    // 通知の発行だけを行う（履歴追記はしない）。まとめ通知は履歴を別途1件ずつ残すため分離。
+    private fun postNotification(
+        context: Context, channel: String, title: String, message: String,
+        notifyId: Int, priority: Int
+    ) {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
@@ -84,7 +126,6 @@ object NotificationHelper {
             .setAutoCancel(true)
             .build()
 
-        appendHistory(context, category, title, message)
         context.getSystemService(NotificationManager::class.java).notify(notifyId, notification)
     }
 

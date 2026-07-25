@@ -65,6 +65,14 @@ object EtfCategory {
         return MAP[key] ?: UNCATEGORIZED
     }
 
+    // このティッカーがETFか。上のMAPに載っているものは全てETFという前提で判定する。
+    // 個別株をMAPに足してはいけない（足すとETF扱いになる）。
+    // 種別判定は AssetKind に集約しているので、画面から直接これを呼ばないこと。
+    fun isEtf(ticker: String?): Boolean {
+        val key = ticker?.trim()?.uppercase() ?: return false
+        return MAP.containsKey(key)
+    }
+
     // カテゴリ名の並び順スコア（小さいほど先頭、未分類は最後）。
     fun orderIndex(category: String): Int {
         val i = ORDER.indexOf(category)

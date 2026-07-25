@@ -10,7 +10,11 @@ import com.example.etfbuyalert.data.network.NotionClient
 import com.example.etfbuyalert.data.network.YahooFinanceClient
 import com.example.etfbuyalert.domain.AlertEngine
 import com.example.etfbuyalert.domain.EtfCategory
+import com.example.etfbuyalert.domain.Freshness
 import com.example.etfbuyalert.domain.Money
+import com.example.etfbuyalert.domain.Symbol
+import com.example.etfbuyalert.domain.Ma200Lines
+import com.example.etfbuyalert.domain.WeeklyRsi
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -21,6 +25,10 @@ class EtfRepository(private val context: Context) {
 
     private val storage = JsonStorage(context)
     private val TAG = "EtfRepository"
+
+    // MA200ラインの再計算間隔。PC版は4週ごとの月次ジョブで、200日線は1日ではほぼ動かない。
+    // 毎回1年ぶんの日足を全銘柄ぶん取りに行くと通信も電池も無駄なので7日に1回までとする。
+    private val MA_LINES_REFRESH_MS = 7L * 24 * 60 * 60 * 1000
 
     fun load(): AppData = storage.load()
 
@@ -41,26 +49,52 @@ class EtfRepository(private val context: Context) {
         )
         val now = System.currentTimeMillis()
         val updated = ArrayList<EtfState>(data.etfStates.size)
+        // このチェックで出たアラートを一旦ためて、最後にまとめて1件の通知にする
+        // （複数銘柄が同時に到達したとき、通知が何件も個別に飛んでこないように）
+        val pending = ArrayList<NotificationHelper.AlertItem>()
+        var fetchOkCount = 0  // 価格取得に成功した銘柄数（0件なら失敗としてログに残す）
         for (st in data.etfStates) {
             val quote = YahooFinanceClient.fetchQuote(st.ticker)
             var s = if (quote != null) {
+                fetchOkCount++
                 st.copy(
                     price = quote.price,
                     previousClose = quote.previousClose ?: st.previousClose,
+                    // asOf＝最終取得成功時刻。失敗時は更新しない＝鮮度ガード(Freshness)の判定キー
                     asOf = now,
                     isLive = quote.isLive
                 )
-            } else st  // 取得失敗は前回値を維持（サイレント失敗を作らない）
+            } else st  // 取得失敗は前回値を維持（ただし鮮度ガードで無期限の持ち越しは防ぐ）
 
-            val (newState, alerts) = AlertEngine.evaluate(s, toggles)
+            // 週足RSI（「RSI利確監視」=ONの銘柄のみ計算。OFFの銘柄は一切触らない）。
+            // 取得失敗時は前回値キャッシュで継続（価格取得と同じ流儀。weeklyRsiAsOfも更新しない）。
+            if (s.rsiWatch) {
+                val weekly = YahooFinanceClient.fetchWeeklyCloses(st.ticker)
+                val rsiVal = weekly?.let { WeeklyRsi.calculate(it, now) }
+                if (rsiVal != null) {
+                    s = s.copy(weeklyRsi = rsiVal.rsi, weeklyRsiWeek = rsiVal.weekOf, weeklyRsiAsOf = now)
+                }
+            }
+
+            // MA200ラインを端末内で再計算する（「ライン計算方式」=MA200 の行だけ）。
+            // 以前はPCの月次ジョブが計算してNotionへ書き戻し、アプリはその固定値を読むだけ
+            // だったため、PCを起動しない月はラインが古いまま止まっていた。
+            // 取得失敗時は前回のライン（＝Notion値か前回計算値）を維持する＝週足RSIと同じ流儀。
+            s = refreshMa200Lines(s, now)
+
+            // 7日超の古い価格ではライン到達判定をしない（evaluateの入口で鮮度ガード）
+            val (newState, alerts) = AlertEngine.evaluate(s, toggles, now)
             s = newState
             for (a in alerts) {
-                NotificationHelper.sendAlert(context, a.category, a.title, a.message)
+                pending.add(NotificationHelper.AlertItem(a.category, a.title, a.message))
             }
             updated.add(s)
         }
         data.etfStates.clear()
         data.etfStates.addAll(updated)
+
+        // ためたアラートをまとめて送信（2件以上は1件のまとめ通知に集約）
+        NotificationHelper.sendAlerts(context, pending)
 
         // 3) 毎朝サマリ
         if (type == UpdateType.MORNING_SUMMARY && Settings.notifyMorning(context)) {
@@ -68,12 +102,79 @@ class EtfRepository(private val context: Context) {
         }
 
         // 4) ログ記録＋保存
-        appendLog(data, type, success = true)
+        // 監視銘柄があるのに価格が1件も取れなかったら「失敗」として記録する
+        // （成功と偽ると、更新ログから取得経路の故障に気づけないため）
+        val fetchOk = data.etfStates.isEmpty() || fetchOkCount > 0
+        val logMessage = buildList {
+            if (!fetchOk) add("価格取得0件（全${data.etfStates.size}銘柄失敗）")
+            if (!data.lastSyncOk && data.lastSyncError != null) add("Notion同期失敗")
+        }.joinToString(" / ")
+        appendLog(data, type, success = fetchOk, message = logMessage)
         storage.save(data)
-        return true
+        return fetchOk
     }
 
     // Notionの設定をstatesへマージ。成功時のみstatesを置き換え（price/armedは引き継ぐ）。
+    /**
+     * MA200方式かつ端末内で計算済みなら、その値を返す（Notion値で巻き戻さないため）。
+     * それ以外は null を返し、呼び出し側で Notion の値にフォールバックさせる。
+     */
+    private inline fun keepLocal(
+        lineMethod: String?,
+        prev: EtfState?,
+        pick: () -> Double?,
+    ): Double? =
+        if (lineMethod == Ma200Lines.METHOD && (prev?.maLinesAsOf ?: 0L) > 0L) pick() else null
+
+    /**
+     * 「ライン計算方式」=MA200 の銘柄について、200日線ベースのラインを端末内で再計算する。
+     *
+     * PC版は4週ごとの月次ジョブだった（200日線は1日ではほとんど動かない）ので、
+     * ここも7日に1回までに絞る。毎回1年ぶんの日足を全銘柄取りに行くと通信も電池も無駄。
+     * 取得・計算に失敗したら既存のラインをそのまま残す（0やダミーで上書きすると
+     * 誤ったラインで通知が飛ぶため）。
+     */
+    private fun refreshMa200Lines(st: EtfState, now: Long): EtfState {
+        if (st.lineMethod != Ma200Lines.METHOD) return st          // 担当外の行は一切触らない
+        val elapsed = now - st.maLinesAsOf
+        if (st.maLinesAsOf > 0L && elapsed < MA_LINES_REFRESH_MS) return st
+
+        val hist = YahooFinanceClient.fetchHistory(st.ticker, "1y") ?: return st
+        val lines = Ma200Lines.compute(hist) ?: run {
+            Log.w(TAG, "${st.ticker}: MA200ライン計算に必要なデータが不足（既存ラインを維持）")
+            return st
+        }
+        if (lines.isSubstituteWindow) {
+            // 上場が浅い等で200日ぶん無い場合。黙って代用せずログに残す（PC版と同じ方針）
+            Log.w(TAG, "${st.ticker}: 終値が${lines.maWindowUsed}日ぶんしかなく${lines.maWindowUsed}日線で代用")
+        }
+
+        // Notionへ書き戻す。これをしないとNotion側の数値がPCの最終書き込み時点で凍結し、
+        // 「アプリは新しい値・Notionは古い値」で同じラインが2つ存在することになる。
+        // 書き戻しに失敗しても通知はローカル計算値で動くので、処理は続行する。
+        val token = Settings.notionToken(context)
+        val wroteBack = NotionClient.updateLines(
+            token = token,
+            pageId = st.pageId,
+            dip = lines.dip,
+            deepDip = lines.deepDip,
+            breakout = lines.breakout,
+            stopLoss = lines.stopLoss,
+        )
+        if (!wroteBack) {
+            Log.w(TAG, "${st.ticker}: Notionへのライン書き戻しに失敗（アプリ内の値は更新済み）")
+        }
+
+        return st.copy(
+            dipPrice = lines.dip,
+            deepDipPrice = lines.deepDip,
+            breakoutPrice = lines.breakout,
+            stopLossPrice = lines.stopLoss,
+            maLinesAsOf = now,
+            maWindowUsed = lines.maWindowUsed,
+        )
+    }
+
     private fun syncConfigs(data: AppData) {
         val token = Settings.notionToken(context)
         val db = Settings.notionDbId(context)
@@ -85,29 +186,51 @@ class EtfRepository(private val context: Context) {
             return
         }
         val merged = res.items.map { n ->
-            // 既存状態を pageId（無ければticker）で引き継ぐ
+            // Notionのティッカー表記はゆれている（ETFは"1540.T"、ADP型日本株は"1925"）ので、
+            // ここ＝同期の入口で正規形に直す。以降のYahoo取得も通貨表示もこの値だけを見る（Symbol参照）。
+            // これをしないと日本株はYahooが404を返し価格が取れず、円建てもドル表示になる。
+            val ticker = Symbol.normalize(n.ticker, n.market)
+            // 既存状態を pageId（無ければ正規化後ticker）で引き継ぐ
             val prev = data.etfStates.find { it.pageId == n.pageId }
-                ?: data.etfStates.find { it.ticker == n.ticker }
+                ?: data.etfStates.find { it.ticker == ticker }
             EtfState(
                 pageId = n.pageId,
-                ticker = n.ticker,
+                ticker = ticker,
                 name = n.name,
                 market = n.market,
-                // カテゴリ：Notionの「カテゴリ」列を最優先、無ければアプリ内対応表で補完
-                category = n.category?.takeIf { it.isNotBlank() } ?: EtfCategory.of(n.ticker),
-                dipPrice = n.dipPrice,
-                deepDipPrice = n.deepDipPrice,
-                breakoutPrice = n.breakoutPrice,
-                stopLossPrice = n.stopLossPrice,
+                // 分類：Notionの「カテゴリ」列 → 「業種」列 → アプリ内対応表 の順で補完
+                category = n.category?.takeIf { it.isNotBlank() }
+                    ?: n.sector?.takeIf { it.isNotBlank() }
+                    ?: EtfCategory.of(ticker),
+                sector = n.sector,
+                lineMethod = n.lineMethod,
+                // ライン計算方式=MA200 の行は、端末内で計算した値を優先する。
+                // 通常は書き戻し済みでNotionと同値だが、書き戻しが失敗した回や、
+                // 移行直後にNotionへまだ反映されていない間は、Notion側が古い。
+                // そこで巻き戻さないよう端末計算値を優先する。
+                // 未計算(maLinesAsOf=0)のうちはNotionの値を使う＝初回や移行直後も動く。
+                dipPrice = keepLocal(n.lineMethod, prev) { prev?.dipPrice } ?: n.dipPrice,
+                deepDipPrice = keepLocal(n.lineMethod, prev) { prev?.deepDipPrice } ?: n.deepDipPrice,
+                breakoutPrice = keepLocal(n.lineMethod, prev) { prev?.breakoutPrice } ?: n.breakoutPrice,
+                stopLossPrice = keepLocal(n.lineMethod, prev) { prev?.stopLossPrice } ?: n.stopLossPrice,
+                maLinesAsOf = if (n.lineMethod == Ma200Lines.METHOD) prev?.maLinesAsOf ?: 0L else 0L,
+                maWindowUsed = if (n.lineMethod == Ma200Lines.METHOD) prev?.maWindowUsed ?: 0 else 0,
                 purchased = n.purchased,
                 price = prev?.price,
                 previousClose = prev?.previousClose,
                 asOf = prev?.asOf ?: 0L,
                 isLive = prev?.isLive ?: false,
+                // 週足RSI：ON/OFFはNotionが真実の源、計算値・通知済みフラグは前回状態を引き継ぐ
+                rsiWatch = n.rsiWatch,
+                weeklyRsi = prev?.weeklyRsi,
+                weeklyRsiWeek = prev?.weeklyRsiWeek,
+                weeklyRsiAsOf = prev?.weeklyRsiAsOf ?: 0L,
                 dipArmed = prev?.dipArmed ?: false,
                 deepArmed = prev?.deepArmed ?: false,
                 breakoutArmed = prev?.breakoutArmed ?: false,
                 stopArmed = prev?.stopArmed ?: false,
+                rsiTake1Armed = prev?.rsiTake1Armed ?: false,
+                rsiTake2Armed = prev?.rsiTake2Armed ?: false,
                 lastZone = prev?.lastZone ?: ""
             )
         }
@@ -121,11 +244,19 @@ class EtfRepository(private val context: Context) {
     // 毎朝サマリ通知を組み立てて送信
     private fun sendMorningSummary(data: AppData) {
         if (data.etfStates.isEmpty()) return
+        val now = System.currentTimeMillis()
         val sb = StringBuilder()
         for (st in data.etfStates.sortedBy { it.ticker }) {
-            val zone = AlertEngine.currentZone(st)
+            // 鮮度ガード：7日超の古い価格は「現在値」として出さず、取得失敗を明示する
+            if (Freshness.isInvalid(st.asOf, now)) {
+                sb.append("• ${st.ticker}  ${Freshness.INVALID_TEXT}\n")
+                continue
+            }
+            val zone = AlertEngine.currentZone(st, now)
             val price = st.price
-            sb.append("• ${st.ticker}  ${Money.format(st.ticker, price)}  ［${zone.label}］\n")
+            // 3日超は「（◯日前の値）」を添えて、最新値と誤解させない
+            val staleNote = Freshness.staleSuffix(st.asOf, now)
+            sb.append("• ${st.ticker}  ${Money.format(st.ticker, price)}$staleNote  ［${zone.label}］\n")
             val parts = mutableListOf<String>()
             if (st.dipPrice != null) parts.add("押し目${Money.format(st.ticker, st.dipPrice)}${gap(price, st.dipPrice)}")
             if (st.stopLossPrice != null) parts.add("損切り${Money.format(st.ticker, st.stopLossPrice)}")

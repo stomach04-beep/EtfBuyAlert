@@ -20,12 +20,23 @@ object Settings {
     fun notionDbId(ctx: Context): String =
         prefs(ctx).getString(KEY_NOTION_DB, DEFAULT_NOTION_DB)?.ifBlank { DEFAULT_NOTION_DB } ?: DEFAULT_NOTION_DB
 
-    // --- 監視タブのグループ表示モード（"theme"=テーマ別 / "status"=状況別）---
-    const val KEY_GROUP_MODE = "watch_group_mode"
-    const val GROUP_THEME = "theme"
-    const val GROUP_STATUS = "status"
-    fun groupMode(ctx: Context): String =
-        prefs(ctx).getString(KEY_GROUP_MODE, GROUP_THEME)?.ifBlank { GROUP_THEME } ?: GROUP_THEME
+    // --- 監視タブの絞り込み（種別タブ）---
+    // 監視対象がETF11本＋個別株79銘柄＝90行規模になり、テーマ別/状況別の見出し分けでは
+    // 「今見るべき銘柄」が埋もれるため、種別で絞って「発火の近さ順」に並べる方式へ変更した。
+    // 保存キーは旧「グループ表示モード」のものを流用する（旧値"theme"/"status"は
+    // 下の候補に無いので TAB_ALL にフォールバックする＝移行処理は不要）。
+    const val KEY_WATCH_TAB = "watch_group_mode"
+    const val TAB_ALL = "all"
+    const val TAB_FIRED = "fired"
+    const val TAB_US = "us"
+    const val TAB_JP = "jp"
+    const val TAB_ETF = "etf"
+    val WATCH_TABS = listOf(TAB_ALL, TAB_FIRED, TAB_US, TAB_JP, TAB_ETF)
+
+    fun watchTab(ctx: Context): String {
+        val v = prefs(ctx).getString(KEY_WATCH_TAB, TAB_ALL).orEmpty()
+        return if (v in WATCH_TABS) v else TAB_ALL   // 未知の値（旧設定含む）は「すべて」に倒す
+    }
 
     // --- チェック間隔（分）---
     const val KEY_INTERVAL = "check_interval_min"
