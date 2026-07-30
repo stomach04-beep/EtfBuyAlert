@@ -105,10 +105,26 @@ object NotificationHelper {
         postNotification(context, channel, title, message, notifyId, priority)
     }
 
+    // 沈黙監視の警告を送る。
+    // 別ID・記録なしで出す：警告自身が「最後に鳴った日」を更新すると
+    // 沈黙時計がリセットされ、経過日数の表示が狂うため。
+    fun sendSilenceWarning(context: Context, title: String, message: String) {
+        appendHistory(context, "沈黙監視", title, message)
+        postNotification(context, CHANNEL_ALERT, title, message,
+            SilenceWatch.WARN_NOTIFICATION_ID, NotificationCompat.PRIORITY_DEFAULT,
+            record = false)
+    }
+
     // 通知の発行だけを行う（履歴追記はしない）。まとめ通知は履歴を別途1件ずつ残すため分離。
+    //
+    // record: 「最後に鳴った日」（沈黙監視の起点）を更新するか。
+    // このアプリは毎朝サマリ（設定ON時）もここを通るので、記録は実質「生存信号」になる。
+    // 　→ 朝サマリが出続ける限り警告なし＝アプリ健全
+    // 　→ サマリごと止まったら14日後に AlarmHealthWorker（別経路のWorkManager）が警告
+    // 買い時ライン到達は14日以上無いのが普通なので、アラートだけを記録対象にすると誤報になる。
     private fun postNotification(
         context: Context, channel: String, title: String, message: String,
-        notifyId: Int, priority: Int
+        notifyId: Int, priority: Int, record: Boolean = true
     ) {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -127,6 +143,8 @@ object NotificationHelper {
             .build()
 
         context.getSystemService(NotificationManager::class.java).notify(notifyId, notification)
+        // 「最後に鳴った日」を記録する（沈黙監視の起点。上のコメント参照）
+        if (record) SilenceWatch.recordNotified(context)
     }
 
     // 通知を履歴ファイルへ追記（先頭=最新、上限100件）

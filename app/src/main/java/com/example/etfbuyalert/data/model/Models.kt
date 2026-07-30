@@ -44,6 +44,12 @@ data class EtfState(
     // Notionの「RSI利確監視」checkboxがONの銘柄だけRSI計算・通知の対象になる
     // （プロパティ未新設のDBでもfalse扱いになるだけでクラッシュしない）。
     val rsiWatch: Boolean = false,       // RSI利確監視のON/OFF（Notion同期）
+
+    // --- ブックマーク（★。打診買い・押し目買いの方針を定めた銘柄の印）---
+    // Notionの「ブックマーク」checkbox列と双方向で同期する（Notionが単一の真実の源）。
+    // PC側（Claude）で方針を決めたときにNotionのチェックを入れれば、アプリの★タブに出る。
+    // アプリで★を押した場合もNotionへ書き戻すので、値が2つに分裂しない。
+    val bookmarked: Boolean = false,
     val weeklyRsi: Double? = null,       // 週足RSI(14)。確定週の終値ベース（WeeklyRsiで計算）
     val weeklyRsiWeek: String? = null,   // RSIの基準週（最終確定バーの週初日 "yyyy-MM-dd"）
     val weeklyRsiAsOf: Long = 0L,        // RSIの最終計算成功時刻（失敗時は前回値キャッシュで継続）

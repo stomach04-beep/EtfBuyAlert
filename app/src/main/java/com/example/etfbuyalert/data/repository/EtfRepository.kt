@@ -32,6 +32,34 @@ class EtfRepository(private val context: Context) {
 
     fun load(): AppData = storage.load()
 
+    /**
+     * ブックマーク（★）を切り替える。Notionへ書き戻してからローカルJSONも更新する。
+     *
+     * Notionが単一の真実の源なので、書き戻しに失敗したらローカルも変えない
+     * （変えてしまうと次の同期でNotionの値に戻され、「押したのに消えた」ように見える。
+     *  サイレントに食い違うより、その場で失敗を伝えたほうがよい）。
+     *
+     * @return 成功したら切り替え後の値、失敗したら null（呼び出し側でメッセージを出す）
+     */
+    fun toggleBookmark(ticker: String): Boolean? {
+        val data = storage.load()
+        val idx = data.etfStates.indexOfFirst { it.ticker == ticker }
+        if (idx < 0) return null
+        val st = data.etfStates[idx]
+        val next = !st.bookmarked
+
+        val token = Settings.notionToken(context)
+        val ok = NotionClient.updateBookmark(token, st.pageId, next)
+        if (!ok) {
+            Log.w(TAG, "${st.ticker}: ブックマークのNotion書き戻しに失敗（ローカルも変更しない）")
+            return null
+        }
+
+        data.etfStates[idx] = st.copy(bookmarked = next)
+        storage.save(data)
+        return next
+    }
+
     // 価格チェック1回ぶんを実行（type=MORNING_SUMMARYなら朝サマリも送る）。
     // 同期失敗時も前回値（キャッシュ）で価格判定を続ける。
     fun update(type: UpdateType): Boolean {
@@ -185,7 +213,17 @@ class EtfRepository(private val context: Context) {
             Log.w(TAG, "Notion同期失敗（キャッシュ継続）: ${res.error}")
             return
         }
-        val merged = res.items.map { n ->
+        // 生存監視用の特別行を先に抜き取る（銘柄ではないので価格取得も通知も監視一覧入りもしない）。
+        // 同期が成功したこの瞬間だけ「アプリ最終同期」に現在時刻を書き、外部の見張りジョブが
+        // アプリの停止（Doze・電池最適化・force-stop・トークン失効）に気づけるようにする。
+        val heartbeatRow = res.items.find { it.ticker == NotionClient.HEARTBEAT_TICKER }
+        if (heartbeatRow != null) {
+            val hbOk = NotionClient.updateHeartbeat(token, heartbeatRow.pageId)
+            if (!hbOk) Log.w(TAG, "ハートビート書き込みに失敗（監視動作は継続）")
+        }
+        val items = res.items.filter { it.ticker != NotionClient.HEARTBEAT_TICKER }
+
+        val merged = items.map { n ->
             // Notionのティッカー表記はゆれている（ETFは"1540.T"、ADP型日本株は"1925"）ので、
             // ここ＝同期の入口で正規形に直す。以降のYahoo取得も通貨表示もこの値だけを見る（Symbol参照）。
             // これをしないと日本株はYahooが404を返し価格が取れず、円建てもドル表示になる。
@@ -222,6 +260,10 @@ class EtfRepository(private val context: Context) {
                 isLive = prev?.isLive ?: false,
                 // 週足RSI：ON/OFFはNotionが真実の源、計算値・通知済みフラグは前回状態を引き継ぐ
                 rsiWatch = n.rsiWatch,
+                // ブックマーク（★）もNotionが真実の源。PC側（Claude）で方針を決めて
+                // Notionの「ブックマーク」にチェックを入れれば、次の同期で★タブに出る。
+                // アプリで押した分はその場でNotionへ書き戻しているので値は一致する。
+                bookmarked = n.bookmarked,
                 weeklyRsi = prev?.weeklyRsi,
                 weeklyRsiWeek = prev?.weeklyRsiWeek,
                 weeklyRsiAsOf = prev?.weeklyRsiAsOf ?: 0L,

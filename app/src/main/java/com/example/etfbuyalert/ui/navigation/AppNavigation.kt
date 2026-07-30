@@ -3,9 +3,9 @@ package com.example.etfbuyalert.ui.navigation
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -22,7 +22,8 @@ import com.example.etfbuyalert.ui.screen.watchlist.WatchListScreen
 
 // ボトムナビの項目
 sealed class BottomNavItem(val route: String, val label: String, val icon: ImageVector) {
-    data object Watch : BottomNavItem("watch", "監視", Icons.Default.ShowChart)
+    // ShowChart は AutoMirrored 版へ移行済み（旧 Icons.Default.ShowChart は deprecated）
+    data object Watch : BottomNavItem("watch", "監視", Icons.AutoMirrored.Filled.ShowChart)
     data object History : BottomNavItem("history", "履歴", Icons.Default.History)
     data object Settings : BottomNavItem("settings", "設定", Icons.Default.Settings)
 }
@@ -40,6 +41,7 @@ fun AppNavigation(viewModel: MainViewModel) {
     val lastSyncError by viewModel.lastSyncError.collectAsStateWithLifecycle()
     val lastSyncAt by viewModel.lastSyncAt.collectAsStateWithLifecycle()
     val watchTab by viewModel.watchTab.collectAsStateWithLifecycle()
+    val bookmarkError by viewModel.bookmarkError.collectAsStateWithLifecycle()
     val notifications by viewModel.notifications.collectAsStateWithLifecycle()
     val chart by viewModel.chart.collectAsStateWithLifecycle()
     val chartLoading by viewModel.chartLoading.collectAsStateWithLifecycle()
@@ -110,6 +112,9 @@ fun AppNavigation(viewModel: MainViewModel) {
                     lastSyncAt = lastSyncAt,
                     watchTab = watchTab,
                     onWatchTabChange = { viewModel.setWatchTab(it) },
+                    onToggleBookmark = { viewModel.toggleBookmark(it) },
+                    bookmarkError = bookmarkError,
+                    onBookmarkErrorShown = { viewModel.clearBookmarkError() },
                     onRefresh = { viewModel.refreshData() },
                     onEtfClick = { ticker -> navController.navigate("detail/$ticker") }
                 )
