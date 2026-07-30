@@ -17,6 +17,19 @@ object NotionClient {
     private const val TAG = "NotionClient"
     private const val NOTION_VERSION = "2022-06-28"
 
+    // ブックマーク列の名前は読み取り・書き込みの両方で使うので1か所に定義する。
+    // ここがNotion側の列名とズレると「黙って書き込まれない／常にfalse」になる（DRY）。
+    const val PROP_BOOKMARK = "ブックマーク"
+
+    // 生存監視（ハートビート）用。アプリが同期のたびに「アプリ最終同期」へ現在時刻を書く。
+    // 外部の見張りジョブ（PC/VPS）はこの時刻だけを見て、アプリが止まっていないかを判断する。
+    // ・ティッカー _APP_HEARTBEAT の行は銘柄ではないので価格取得も通知も行わない
+    // ・普通の行の「最終更新」ではダメ：アプリは価格チェックのたびにNotionへ書かないうえ、
+    //   他ジョブ（ADP型ラインの日次更新など）の書き込みでも新しくなり、別ジョブの生存を
+    //   見ていることになる
+    const val HEARTBEAT_TICKER = "_APP_HEARTBEAT"
+    const val PROP_HEARTBEAT = "アプリ最終同期"
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
@@ -33,7 +46,11 @@ object NotionClient {
         val breakoutPrice: Double?,
         val stopLossPrice: Double?,
         val purchased: Boolean,
-        val category: String?   // 任意の「カテゴリ」セレクト列（無ければnull→アプリ内対応表で補完）
+        val category: String?,  // 任意の「カテゴリ」セレクト列（無ければnull→業種→アプリ内対応表の順で補完）
+        val sector: String?,    // 「業種」セレクト列（化学/医薬品/機械/サービス 等）。個別株はこちらが入る
+        val lineMethod: String?, // 「ライン計算方式」セレクト列（ADP型 / MA200 / 手動）＝ラインの持ち主
+        val rsiWatch: Boolean,  // 「RSI利確監視」checkbox列。列が未新設のDBではfalse扱い
+        val bookmarked: Boolean // 「ブックマーク」checkbox列。方針を定めた銘柄の印（★タブ）
     )
 
     // 同期結果（成功/失敗とメッセージを呼び出し側へ返す）
@@ -115,6 +132,136 @@ object NotionClient {
         return SyncResult(true, all, null)
     }
 
+    /**
+     * 端末内で計算した価格ラインをNotionのページへ書き戻す。
+     *
+     * 【なぜ必要か】
+     * ラインの計算をアプリ側へ移した結果、Notionの数値はPCの月次ジョブが最後に
+     * 書いた値のまま凍結する。放置すると「アプリは新しい値・Notionは古い値」で
+     * 同じ押し目ラインが2つ存在することになり、Notionを見て判断すると通知と食い違う。
+     * 書き戻して単一の値に保つ。
+     *
+     * 失敗しても呼び出し側は止めない（通知はローカル計算値で動くため）。true=成功。
+     */
+    fun updateLines(
+        token: String,
+        pageId: String,
+        dip: Double,
+        deepDip: Double,
+        breakout: Double,
+        stopLoss: Double,
+    ): Boolean {
+        if (token.isBlank() || pageId.isBlank()) return false
+        val url = "https://api.notion.com/v1/pages/$pageId"
+        // 読み取り側(parse)と同じプロパティ名を使う。ここがズレると黙って書き込まれない
+        val body = """
+            {"properties":{
+              "買い時価格(押し目)":{"number":$dip},
+              "買い増し価格(深押し)":{"number":$deepDip},
+              "順張り価格(上抜け)":{"number":$breakout},
+              "損切り価格":{"number":$stopLoss}
+            }}
+        """.trimIndent()
+
+        for (attempt in 0 until 3) {
+            try {
+                val req = Request.Builder()
+                    .url(url)
+                    .addHeader("Authorization", "Bearer $token")
+                    .addHeader("Notion-Version", NOTION_VERSION)
+                    .addHeader("Content-Type", "application/json")
+                    .patch(body.toRequestBody("application/json".toMediaType()))
+                    .build()
+                client.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) return true
+                    val text = resp.body?.string() ?: ""
+                    Log.w(TAG, "ライン書き戻し失敗 HTTP ${resp.code}: $text")
+                    // 権限・プロパティ名の誤りはリトライしても直らないので即あきらめる
+                    if (resp.code == 400 || resp.code == 401 || resp.code == 403 || resp.code == 404) return false
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "ライン書き戻し通信失敗(${attempt + 1}/3): ${e.message}")
+            }
+            // 429/5xx はしばらく待って再試行（Notionのレート制限は約3req/秒）
+            try { Thread.sleep(1000L * (attempt + 1)) } catch (_: InterruptedException) {}
+        }
+        return false
+    }
+
+    /**
+     * ブックマーク（★）のON/OFFをNotionへ書き戻す。
+     *
+     * 読み取りと同じ「ブックマーク」列を使う（プロパティ名は PROP_BOOKMARK に単一定義）。
+     * ここを書かないと、アプリで付けた★が次の同期でNotionのfalseに上書きされて消える。
+     * true=書き込み成功。呼び出し側は失敗時にUIを元へ戻してユーザーへ知らせる。
+     */
+    fun updateBookmark(token: String, pageId: String, value: Boolean): Boolean {
+        if (token.isBlank() || pageId.isBlank()) return false
+        val url = "https://api.notion.com/v1/pages/$pageId"
+        val body = """{"properties":{"$PROP_BOOKMARK":{"checkbox":$value}}}"""
+
+        for (attempt in 0 until 3) {
+            try {
+                val req = Request.Builder()
+                    .url(url)
+                    .addHeader("Authorization", "Bearer $token")
+                    .addHeader("Notion-Version", NOTION_VERSION)
+                    .addHeader("Content-Type", "application/json")
+                    .patch(body.toRequestBody("application/json".toMediaType()))
+                    .build()
+                client.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) return true
+                    val text = resp.body?.string() ?: ""
+                    Log.w(TAG, "ブックマーク書き戻し失敗 HTTP ${resp.code}: $text")
+                    // 権限・プロパティ名の誤りはリトライしても直らない（列の新設漏れもここ）
+                    if (resp.code == 400 || resp.code == 401 || resp.code == 403 || resp.code == 404) return false
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "ブックマーク書き戻し通信失敗(${attempt + 1}/3): ${e.message}")
+            }
+            try { Thread.sleep(1000L * (attempt + 1)) } catch (_: InterruptedException) {}
+        }
+        return false
+    }
+
+    /**
+     * 生存の証（ハートビート）をNotionへ書く。同期が成功したときだけ呼ぶ。
+     *
+     * 書くのは日時1つだけ。失敗しても通知動作には影響しないので呼び出し側は止めない。
+     * タイムゾーン付きISO8601（例 2026-07-28T12:34:56+09:00）で書く。日付だけだと
+     * 「何時に同期したか」が消え、6時間の鮮度判定ができなくなる。
+     */
+    fun updateHeartbeat(token: String, pageId: String): Boolean {
+        if (token.isBlank() || pageId.isBlank()) return false
+        val url = "https://api.notion.com/v1/pages/$pageId"
+        val now = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US)
+            .format(java.util.Date())
+        val body = """{"properties":{"$PROP_HEARTBEAT":{"date":{"start":"$now"}}}}"""
+
+        for (attempt in 0 until 3) {
+            try {
+                val req = Request.Builder()
+                    .url(url)
+                    .addHeader("Authorization", "Bearer $token")
+                    .addHeader("Notion-Version", NOTION_VERSION)
+                    .addHeader("Content-Type", "application/json")
+                    .patch(body.toRequestBody("application/json".toMediaType()))
+                    .build()
+                client.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) return true
+                    val text = resp.body?.string() ?: ""
+                    Log.w(TAG, "ハートビート書き込み失敗 HTTP ${resp.code}: $text")
+                    // 列の新設漏れ（400）や権限（401/403/404）はリトライしても直らない
+                    if (resp.code == 400 || resp.code == 401 || resp.code == 403 || resp.code == 404) return false
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "ハートビート通信失敗(${attempt + 1}/3): ${e.message}")
+            }
+            try { Thread.sleep(1000L * (attempt + 1)) } catch (_: InterruptedException) {}
+        }
+        return false
+    }
+
     private fun friendlyError(code: Int, body: String): String = when (code) {
         401 -> "Notionトークンが無効です（設定を確認してください）"
         403, 404 -> "DBにアクセスできません。Notionでこのインテグレーションを\n「投資ウォッチリスト」に接続してください"
@@ -146,7 +293,15 @@ object NotionClient {
                         breakoutPrice = number(props, "順張り価格(上抜け)"),
                         stopLossPrice = number(props, "損切り価格"),
                         purchased = dateNotNull(props, "購入日"),
-                        category = selectName(props, "カテゴリ")  // 列が無ければnullで返る（壊れない）
+                        // 「カテゴリ」列は現状このDBに存在しない（＝常にnull）。将来ユーザーが
+                        // 手動分類用に足したときに効くよう残してある。実際の分類は業種→対応表で補完する。
+                        category = selectName(props, "カテゴリ"),
+                        sector = selectName(props, "業種"),
+                        lineMethod = selectName(props, "ライン計算方式"),
+                        // 週足RSI過熱利確のオプトイン。列がまだ無いDBでもfalseになるだけ（クラッシュしない）
+                        rsiWatch = checkbox(props, "RSI利確監視"),
+                        // ブックマーク（★）。PC側で方針を決めた銘柄にチェックを入れるとアプリの★タブに出る
+                        bookmarked = checkbox(props, PROP_BOOKMARK)
                     )
                 )
             }
@@ -184,6 +339,13 @@ object NotionClient {
         val p = prop(props, name) ?: return null
         val sel = p.get("select")?.takeIf { it.isJsonObject }?.asJsonObject ?: return null
         return sel.get("name")?.takeIf { !it.isJsonNull }?.asString
+    }
+
+    // checkbox列の値。プロパティ自体が無い（DB側で未新設）場合もfalseを返す＝安全側
+    private fun checkbox(props: JsonObject, name: String): Boolean {
+        val p = prop(props, name) ?: return false
+        val c = p.get("checkbox") ?: return false
+        return if (c.isJsonNull) false else c.asBoolean
     }
 
     private fun dateNotNull(props: JsonObject, name: String): Boolean {

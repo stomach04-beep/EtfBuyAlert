@@ -15,8 +15,10 @@ android {
         applicationId = "com.example.etfbuyalert"
         minSdk = 31
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        // 2026-07-29: グループ表示→月次ライン→判定見直し→まとめ通知→週足RSI→MA200端末内計算
+        // →4タブ化→★ブックマーク と8回の機能追加を経て 1.0 のままだったので実態へ。
+        versionCode = 9
+        versionName = "1.9"   // 2026-07-29: 沈黙監視(SilenceWatch)を追加
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

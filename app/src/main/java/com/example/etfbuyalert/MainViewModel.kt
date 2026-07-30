@@ -32,12 +32,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    // --- 監視タブのグループ表示モード（テーマ別 / 状況別）---
-    private val _groupMode = MutableStateFlow(Settings.groupMode(app))
-    val groupMode: StateFlow<String> = _groupMode.asStateFlow()
-    fun setGroupMode(mode: String) {
-        Settings.prefs(getApplication()).edit().putString(Settings.KEY_GROUP_MODE, mode).apply()
-        _groupMode.value = mode
+    // --- 監視タブの絞り込み（発火中 / 日本株 / 米国株 / ETF）---
+    private val _watchTab = MutableStateFlow(Settings.watchTab(app))
+    val watchTab: StateFlow<String> = _watchTab.asStateFlow()
+    fun setWatchTab(tab: String) {
+        Settings.prefs(getApplication()).edit().putString(Settings.KEY_WATCH_TAB, tab).apply()
+        _watchTab.value = tab
+    }
+
+    // --- ブックマーク（★）の操作結果メッセージ（失敗時だけ出す）---
+    // 印そのものは EtfState.bookmarked が持つ（Notionが単一の真実の源）ので、
+    // ここでは「Notionへ書けなかった」ことだけを画面へ伝える。
+    private val _bookmarkError = MutableStateFlow<String?>(null)
+    val bookmarkError: StateFlow<String?> = _bookmarkError.asStateFlow()
+    fun clearBookmarkError() { _bookmarkError.value = null }
+
+    /**
+     * カードの★から呼ぶ。Notionへ書き戻し、成功したら一覧を読み直して反映する。
+     * 失敗時は印を変えずメッセージを出す（黙って食い違わせない）。
+     */
+    fun toggleBookmark(ticker: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = repo.toggleBookmark(ticker)
+            if (result == null) {
+                _bookmarkError.value = "ブックマークをNotionに保存できませんでした（通信・トークンを確認してください）"
+            } else {
+                val data = repo.load()
+                _etfStates.value = data.etfStates.sortedBy { it.ticker }
+            }
+        }
     }
 
     // --- 同期状態（バナー表示用）---

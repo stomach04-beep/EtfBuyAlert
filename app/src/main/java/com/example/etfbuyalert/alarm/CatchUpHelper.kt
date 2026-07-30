@@ -19,7 +19,7 @@ import java.util.Locale
  * 取りこぼし自動リカバリ。
  * 端末OFF・機内モード等で「毎朝サマリ」アラームが不発だった場合、
  * 当日分が永久に欠落する（setAlarmClockは次回1回のみ予約のため）。
- * この helper は「今日の朝サマリ予定時刻を過ぎているのに成功ログがない」ときに
+ * この helper は「今日の朝サマリ予定時刻を過ぎているのに実行ログがない」ときに
  * MORNING_SUMMARY を即時投入する。あわせて定期価格チェックの登録も保証する。
  *
  * 呼び出し箇所: アプリ起動時 / フォアグラウンド復帰 / 端末再起動後 / 定期ヘルスワーカー
@@ -45,11 +45,15 @@ object CatchUpHelper {
         // まだ予定時刻が来ていなければ何もしない
         if (now.before(triggerTime)) return
 
-        // 今日 MORNING_SUMMARY が成功済みかを更新ログで確認
+        // 今日 MORNING_SUMMARY が実行済みかを更新ログで確認。
+        // ※ success ではなく「実行の記録」を見る。価格取得0件の日は success=false が
+        //    残るようになった（EtfRepository.appendLog）が、それを未実行扱いにすると
+        //    取得経路の故障中、アプリを開くたびに古い値の朝サマリを再送してしまう。
+        //    ここの目的は「アラーム不発の取りこぼし回収」であり、失敗リトライではない。
         val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(now.time)
         val done = try {
             JsonStorage(context).load().updateLogs.any {
-                it.date == today && it.success && it.updateType == UpdateType.MORNING_SUMMARY.name
+                it.date == today && it.updateType == UpdateType.MORNING_SUMMARY.name
             }
         } catch (e: Exception) {
             Log.e(TAG, "ログ読込失敗: ${e.message}"); return

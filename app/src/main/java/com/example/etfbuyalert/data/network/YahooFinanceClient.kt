@@ -87,6 +87,31 @@ object YahooFinanceClient {
         return null
     }
 
+    // 週足の終値系列を取得（週足RSI計算用）。range=3y・interval=1wk 固定。
+    // 最終バーは進行中の当週（未確定）を含むことがある＝確定週だけ使う処理は
+    // 呼び出し側（WeeklyRsi）が行う。失敗時null（呼び出し側が前回値キャッシュを維持）。
+    fun fetchWeeklyCloses(ticker: String): List<com.example.etfbuyalert.data.model.ChartPoint>? {
+        val url = "https://query1.finance.yahoo.com/v8/finance/chart/" +
+            ticker + "?interval=1wk&range=3y"
+        repeat(3) { attempt ->
+            try {
+                val req = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                    .build()
+                client.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use
+                    val body = resp.body?.string() ?: return@use
+                    return parseHistory(body)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "$ticker 週足取得失敗(${attempt + 1}/3): ${e.message}")
+            }
+            try { Thread.sleep(800L * (attempt + 1)) } catch (_: InterruptedException) {}
+        }
+        return null
+    }
+
     private fun parseHistory(json: String): List<com.example.etfbuyalert.data.model.ChartPoint>? {
         try {
             val root = JsonParser.parseString(json).asJsonObject
