@@ -133,7 +133,8 @@ object NotificationHelper {
             context, notifyId, intent, PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(context, channel)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_stat_buy_ladder)
+            .setColor(android.graphics.Color.parseColor("#2979FF"))
             .setContentTitle(title)
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
