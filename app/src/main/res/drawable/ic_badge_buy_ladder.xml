@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 通知の大アイコン（setLargeIcon）用バッジ：段階買いラダー＋下向き矢印（EtfBuyAlert用）
+     大アイコンはOSに白く塗られないのでカラーで出せる。
+     アクセント色の丸の中に、上端バーと同じ絵を白で置いている。
+     notification-icons/make_icons.py が自動生成しています。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#2979FF"
+        android:pathData="M12,0 A12,12 0 1,0 12,24 A12,12 0 1,0 12,0 Z" />
+    <group
+        android:pivotX="12"
+        android:pivotY="12"
+        android:scaleX="0.56"
+        android:scaleY="0.56">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M2.4,5.4 L11.6,5.4 L11.6,7.4 L2.4,7.4 Z M2.4,10.6 L11.6,10.6 L11.6,12.6 L2.4,12.6 Z M2.4,15.8 L11.6,15.8 L11.6,17.8 L2.4,17.8 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M16.6,3.6 L19.4,3.6 L19.4,15.2 L22,15.2 L18,20.8 L14,15.2 L16.6,15.2 Z" />
+    </group>
+</vector>
