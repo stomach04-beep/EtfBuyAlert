@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 通知（ステータスバー）用アイコン：段階買いラダー＋下向き矢印
-     対象アプリ：EtfBuyAlert ／ シリーズ：カラフル
+<!-- 通知（ステータスバー）用アイコン：値動きの波＋下向き矢印
+     対象アプリ：EtfBuyAlert ／ シリーズ：標準
      ステータスバーはアルファ値だけを使うので白単色で描く。tint は付けない。
-     通知シェードのアクセント色は Kotlin 側で指定する:
-       .setColor(android.graphics.Color.parseColor("#2979FF"))
-     （上端バーのアイコン自体は仕様どおり白のまま）
      notification-icons/make_icons.py が自動生成しています。 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
@@ -12,9 +9,13 @@
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M2.4,5.4 L11.6,5.4 L11.6,7.4 L2.4,7.4 Z M2.4,10.6 L11.6,10.6 L11.6,12.6 L2.4,12.6 Z M2.4,15.8 L11.6,15.8 L11.6,17.8 L2.4,17.8 Z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.0"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M1.8,14.4 C4.4,7 8,5.8 11,9.4 C14,13 17.6,13.6 22,7.2" />
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M16.6,3.6 L19.4,3.6 L19.4,15.2 L22,15.2 L18,20.8 L14,15.2 L16.6,15.2 Z" />
+        android:pathData="M10.2,10.6 L13.8,10.6 L13.8,17.4 L16.8,17.4 L12,22.6 L7.2,17.4 L10.2,17.4 Z" />
 </vector>

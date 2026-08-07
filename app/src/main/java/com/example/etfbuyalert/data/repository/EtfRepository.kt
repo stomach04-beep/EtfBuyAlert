@@ -9,6 +9,7 @@ import com.example.etfbuyalert.data.model.UpdateLog
 import com.example.etfbuyalert.data.network.NotionClient
 import com.example.etfbuyalert.data.network.YahooFinanceClient
 import com.example.etfbuyalert.domain.AlertEngine
+import com.example.etfbuyalert.domain.AssetKind
 import com.example.etfbuyalert.domain.EtfCategory
 import com.example.etfbuyalert.domain.Freshness
 import com.example.etfbuyalert.domain.Money
@@ -276,6 +277,27 @@ class EtfRepository(private val context: Context) {
                 lastZone = prev?.lastZone ?: ""
             )
         }
+        // 急落優良（RTX自動）行の新規追加を1回だけ通知する。
+        // reversal-screener のRTX型検知ジョブがNotionへ登録した銘柄に「気づく」ための通知で、
+        // 価格ライン到達の通知（AlertEngine）とは別物。
+        // 初回同期（既存stateが空）は全行が"新規"になり大量通知になるため出さない。
+        if (data.etfStates.isNotEmpty()) {
+            val prevRtxIds = data.etfStates
+                .filter { it.lineMethod == AssetKind.METHOD_RTX }
+                .map { it.pageId }.toSet()
+            val newRtx = merged.filter {
+                it.lineMethod == AssetKind.METHOD_RTX && it.pageId !in prevRtxIds
+            }
+            if (newRtx.isNotEmpty()) {
+                val body = newRtx.joinToString("\n") { "・${it.name}（${it.ticker}）" } +
+                        "\nイベント急落型として検知。候補であり推奨ではありません（急落優良タブ参照）"
+                NotificationHelper.sendAlert(
+                    context, "急落優良",
+                    "急落優良に新規 ${newRtx.size}件", body
+                )
+            }
+        }
+
         data.etfStates.clear()
         data.etfStates.addAll(merged)
         data.lastSyncOk = true
