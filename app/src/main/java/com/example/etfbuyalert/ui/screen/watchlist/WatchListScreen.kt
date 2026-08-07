@@ -107,9 +107,10 @@ fun WatchListScreen(
 
                 // 絞り込み＋「押し目まであと何%」の近い順に並べる（発火中が先頭に来る）
                 val shown = remember(etfStates, watchTab) { filterAndSort(etfStates, watchTab) }
-                // 種別チップは種別が混ざるタブ（発火中・★）でのみ表示。
+                // 種別チップは種別が混ざるタブ（発火中・★・急落優良）でのみ表示。
                 // 市場タブ（日本株/米国株/ETF）は絞り込み済みなので冗長になり消す。
-                val showKind = watchTab == Settings.TAB_FIRED || watchTab == Settings.TAB_BOOKMARK
+                val showKind = watchTab == Settings.TAB_FIRED || watchTab == Settings.TAB_BOOKMARK ||
+                        watchTab == Settings.TAB_RTX
 
                 if (shown.isEmpty()) {
                     Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
@@ -117,6 +118,7 @@ fun WatchListScreen(
                             when (watchTab) {
                                 Settings.TAB_FIRED -> "いま発火中（ライン到達）の銘柄はありません"
                                 Settings.TAB_BOOKMARK -> "ブックマークした銘柄はありません\n（カード右上の★、またはNotionの「ブックマーク」列で登録できます）"
+                                Settings.TAB_RTX -> "急落優良（イベント急落した優良大型株）の検知はいまありません\n（reversal-screener のRTX型検知が自動登録します。候補であり推奨ではありません）"
                                 else -> "この種別に該当する銘柄はありません"
                             },
                             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -152,6 +154,9 @@ private data class WatchTab(
 private val TABS: List<WatchTab> = listOf(
     WatchTab(Settings.TAB_FIRED, "発火中") { AlertEngine.isFired(it) },
     WatchTab(Settings.TAB_BOOKMARK, "★") { it.bookmarked },
+    // 急落優良＝イベント急落した優良大型株（reversal-screener のRTX型検知が自動登録した行）。
+    // ライン計算方式=RTX自動 が印。日本株・米国株が混ざるので種別チップも表示する。
+    WatchTab(Settings.TAB_RTX, "急落優良") { it.lineMethod == AssetKind.METHOD_RTX },
     WatchTab(Settings.TAB_JP, "日本株") { AssetKind.of(it) == AssetKind.Kind.JP_STOCK },
     WatchTab(Settings.TAB_US, "米国株") { AssetKind.of(it) == AssetKind.Kind.US_STOCK },
     WatchTab(Settings.TAB_ETF, "ETF") { AssetKind.of(it) == AssetKind.Kind.ETF },

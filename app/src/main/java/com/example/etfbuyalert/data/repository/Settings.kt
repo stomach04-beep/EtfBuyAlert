@@ -29,10 +29,11 @@ object Settings {
     const val KEY_WATCH_TAB = "watch_group_mode"
     const val TAB_FIRED = "fired"
     const val TAB_BOOKMARK = "bookmark"   // ブックマークした銘柄だけ（印は Bookmarks が持つ）
+    const val TAB_RTX = "rtx"             // 急落優良（イベント急落した優良大型株＝RTX自動行）
     const val TAB_US = "us"
     const val TAB_JP = "jp"
     const val TAB_ETF = "etf"
-    val WATCH_TABS = listOf(TAB_FIRED, TAB_BOOKMARK, TAB_JP, TAB_US, TAB_ETF)
+    val WATCH_TABS = listOf(TAB_FIRED, TAB_BOOKMARK, TAB_RTX, TAB_JP, TAB_US, TAB_ETF)
     // 既定タブ＝発火中（今すぐ見るべき銘柄が最初に出る）
     const val DEFAULT_WATCH_TAB = TAB_FIRED
 

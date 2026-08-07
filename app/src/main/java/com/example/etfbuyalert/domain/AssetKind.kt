@@ -18,6 +18,9 @@ object AssetKind {
     // Notionの「ライン計算方式」列の値。ADP型＝個別株プールの日次ジョブが持ち主。
     const val METHOD_ADP = "ADP型"
     const val METHOD_MA200 = "MA200"
+    // RTX自動＝reversal-screener のRTX型（イベント急落型）検知ジョブが持ち主。
+    // イベントで急落した優良大型株を自動登録した行（「急落優良」タブに出る）。
+    const val METHOD_RTX = "RTX自動"
 
     /**
      * 種別を判定する。

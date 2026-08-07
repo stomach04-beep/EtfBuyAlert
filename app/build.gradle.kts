@@ -17,8 +17,8 @@ android {
         targetSdk = 36
         // 2026-07-29: グループ表示→月次ライン→判定見直し→まとめ通知→週足RSI→MA200端末内計算
         // →4タブ化→★ブックマーク と8回の機能追加を経て 1.0 のままだったので実態へ。
-        versionCode = 9
-        versionName = "1.9"   // 2026-07-29: 沈黙監視(SilenceWatch)を追加
+        versionCode = 10
+        versionName = "1.10"  // 2026-08-07: 急落優良タブ（RTX型イベント急落検知の自動登録銘柄）＋新規検知通知
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
