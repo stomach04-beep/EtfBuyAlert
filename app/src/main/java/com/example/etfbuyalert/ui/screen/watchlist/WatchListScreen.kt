@@ -1,7 +1,9 @@
 package com.example.etfbuyalert.ui.screen.watchlist
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,6 +49,8 @@ fun WatchListScreen(
     lastSyncAt: Long,
     watchTab: String,
     onWatchTabChange: (String) -> Unit,
+    firedMethod: String,
+    onFiredMethodChange: (String) -> Unit,
     onToggleBookmark: (String) -> Unit,
     bookmarkError: String?,
     onBookmarkErrorShown: () -> Unit,
@@ -105,8 +109,18 @@ fun WatchListScreen(
                 WatchTabSelector(etfStates, watchTab, onWatchTabChange)
                 Spacer(Modifier.height(8.dp))
 
+                // 発火中タブのときだけ、ライン方式でさらに絞り込めるようにする。
+                // 「ADP型の発火」と「RTX自動の発火」は意味がまるで違うので分けて見られる必要がある。
+                if (watchTab == Settings.TAB_FIRED) {
+                    val firedStates = remember(etfStates) { etfStates.filter { AlertEngine.isFired(it) } }
+                    FiredMethodFilterRow(firedStates, firedMethod, onFiredMethodChange)
+                    Spacer(Modifier.height(8.dp))
+                }
+
                 // 絞り込み＋「押し目まであと何%」の近い順に並べる（発火中が先頭に来る）
-                val shown = remember(etfStates, watchTab) { filterAndSort(etfStates, watchTab) }
+                val shown = remember(etfStates, watchTab, firedMethod) {
+                    filterAndSort(etfStates, watchTab, firedMethod)
+                }
                 // 種別チップは種別が混ざるタブ（発火中・★・急落優良）でのみ表示。
                 // 市場タブ（日本株/米国株/ETF）は絞り込み済みなので冗長になり消す。
                 val showKind = watchTab == Settings.TAB_FIRED || watchTab == Settings.TAB_BOOKMARK ||
@@ -115,10 +129,13 @@ fun WatchListScreen(
                 if (shown.isEmpty()) {
                     Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
                         Text(
-                            when (watchTab) {
-                                Settings.TAB_FIRED -> "いま発火中（ライン到達）の銘柄はありません"
-                                Settings.TAB_BOOKMARK -> "ブックマークした銘柄はありません\n（カード右上の★、またはNotionの「ブックマーク」列で登録できます）"
-                                Settings.TAB_RTX -> "急落優良（イベント急落した優良大型株）の検知はいまありません\n（reversal-screener のRTX型検知が自動登録します。候補であり推奨ではありません）"
+                            when {
+                                // 方式で絞った結果0件なのか、そもそも発火が無いのかを区別して伝える
+                                watchTab == Settings.TAB_FIRED && firedMethod != Settings.FIRED_METHOD_ALL ->
+                                    "この方式で発火中の銘柄はありません\n（「すべて」に戻すと他の方式の発火が見られます）"
+                                watchTab == Settings.TAB_FIRED -> "いま発火中（ライン到達）の銘柄はありません"
+                                watchTab == Settings.TAB_BOOKMARK -> "ブックマークした銘柄はありません\n（カード右上の★、またはNotionの「ブックマーク」列で登録できます）"
+                                watchTab == Settings.TAB_RTX -> "急落優良（イベント急落した優良大型株）の検知はいまありません\n（reversal-screener のRTX型検知が自動登録します。候補であり推奨ではありません）"
                                 else -> "この種別に該当する銘柄はありません"
                             },
                             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -162,18 +179,78 @@ private val TABS: List<WatchTab> = listOf(
     WatchTab(Settings.TAB_ETF, "ETF") { AssetKind.of(it) == AssetKind.Kind.ETF },
 )
 
+// 発火中タブの中の「ライン方式」絞り込み。
+// 同じ発火でも方式によって意味がまったく違う（ADP型＝事前登録した割安条件の成立、
+// RTX自動＝機械が急落を拾った候補で10年BTでは優位性なし、手動＝自分で決めた狙い値、
+// MA200＝200日線を割っただけ）ので、混ぜて見ると判断を誤る。
+// タブを増やすと横スクロールが伸びるため、発火中タブの中の絞り込みとして持たせる。
+private data class MethodFilter(
+    val key: String,
+    val label: String,
+    val match: (EtfState) -> Boolean
+)
+
+private val METHOD_FILTERS: List<MethodFilter> = listOf(
+    MethodFilter(Settings.FIRED_METHOD_ALL, "すべて") { true },
+    MethodFilter("adp", "ADP型") { it.lineMethod == AssetKind.METHOD_ADP },
+    MethodFilter("manual", "手動") { it.lineMethod == AssetKind.METHOD_MANUAL },
+    MethodFilter("ma200", "200日線") { it.lineMethod == AssetKind.METHOD_MA200 },
+    MethodFilter("rtx", "RTX") { it.lineMethod == AssetKind.METHOD_RTX },
+)
+
 /**
  * 選択タブで絞り込み、「押し目まであと何%」の近い順に並べる。
  * 発火中（gapが負）が自動的に先頭へ来るので、90行あっても今見るべき銘柄が埋もれない。
  * 距離を出せない銘柄（価格未取得・ライン未設定）は末尾にまとめる。
+ * methodKey は発火中タブのときだけ効く（他のタブでは方式で切らない）。
  */
-private fun filterAndSort(states: List<EtfState>, tabKey: String): List<EtfState> {
+private fun filterAndSort(
+    states: List<EtfState>,
+    tabKey: String,
+    methodKey: String = Settings.FIRED_METHOD_ALL
+): List<EtfState> {
     val tab = TABS.firstOrNull { it.key == tabKey } ?: TABS.first()
-    return states.filter(tab.match)
+    val method = if (tabKey == Settings.TAB_FIRED) {
+        METHOD_FILTERS.firstOrNull { it.key == methodKey } ?: METHOD_FILTERS.first()
+    } else {
+        METHOD_FILTERS.first()
+    }
+    return states.filter { tab.match(it) && method.match(it) }
         .sortedWith(
             compareBy<EtfState> { AlertEngine.dipGapPercent(it) ?: Double.MAX_VALUE }
                 .thenBy { it.ticker }
         )
+}
+
+/**
+ * 発火中タブの中で「ライン方式」を絞り込むチップ行。件数が0の方式は出さない
+ * （その日いない方式のチップが並んでも押す意味がなく、横幅を食うだけ）。
+ * 「すべて」だけは常に出す（絞り込みを解除する導線が消えると戻れなくなる）。
+ */
+@Composable
+private fun FiredMethodFilterRow(
+    firedStates: List<EtfState>,
+    selected: String,
+    onChange: (String) -> Unit
+) {
+    val shown = METHOD_FILTERS.filter { f ->
+        f.key == Settings.FIRED_METHOD_ALL || firedStates.any(f.match)
+    }
+    // 方式が1種類しかない日は絞り込む意味が無いので行ごと隠す
+    if (shown.size <= 2) return
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        shown.forEach { f ->
+            val n = firedStates.count(f.match)
+            FilterChip(
+                selected = f.key == selected,
+                onClick = { onChange(f.key) },
+                label = { Text("${f.label} $n", fontSize = 12.sp, maxLines = 1, softWrap = false) }
+            )
+        }
+    }
 }
 
 // 種別タブ（件数付き）。FilterChipの行からタブ表示に変更（2026-07-26）。

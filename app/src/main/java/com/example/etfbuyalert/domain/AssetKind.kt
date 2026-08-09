@@ -21,6 +21,8 @@ object AssetKind {
     // RTX自動＝reversal-screener のRTX型（イベント急落型）検知ジョブが持ち主。
     // イベントで急落した優良大型株を自動登録した行（「急落優良」タブに出る）。
     const val METHOD_RTX = "RTX自動"
+    // 手動＝自分で狙い値を決めた行。どのジョブも上書きしない。
+    const val METHOD_MANUAL = "手動"
 
     /**
      * 種別を判定する。
