@@ -41,6 +41,7 @@ fun AppNavigation(viewModel: MainViewModel) {
     val lastSyncError by viewModel.lastSyncError.collectAsStateWithLifecycle()
     val lastSyncAt by viewModel.lastSyncAt.collectAsStateWithLifecycle()
     val watchTab by viewModel.watchTab.collectAsStateWithLifecycle()
+    val firedMethod by viewModel.firedMethod.collectAsStateWithLifecycle()
     val bookmarkError by viewModel.bookmarkError.collectAsStateWithLifecycle()
     val notifications by viewModel.notifications.collectAsStateWithLifecycle()
     val chart by viewModel.chart.collectAsStateWithLifecycle()
@@ -112,6 +113,8 @@ fun AppNavigation(viewModel: MainViewModel) {
                     lastSyncAt = lastSyncAt,
                     watchTab = watchTab,
                     onWatchTabChange = { viewModel.setWatchTab(it) },
+                    firedMethod = firedMethod,
+                    onFiredMethodChange = { viewModel.setFiredMethod(it) },
                     onToggleBookmark = { viewModel.toggleBookmark(it) },
                     bookmarkError = bookmarkError,
                     onBookmarkErrorShown = { viewModel.clearBookmarkError() },

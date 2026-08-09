@@ -40,6 +40,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _watchTab.value = tab
     }
 
+    // --- 発火中タブの中の「ライン方式」絞り込み（すべて / ADP型 / 手動 / 200日線 / RTX）---
+    // 同じ発火でも方式で意味が違うため、混ぜたまま見ないで済むようにする。
+    private val _firedMethod = MutableStateFlow(Settings.firedMethod(app))
+    val firedMethod: StateFlow<String> = _firedMethod.asStateFlow()
+    fun setFiredMethod(key: String) {
+        Settings.prefs(getApplication()).edit().putString(Settings.KEY_FIRED_METHOD, key).apply()
+        _firedMethod.value = key
+    }
+
     // --- ブックマーク（★）の操作結果メッセージ（失敗時だけ出す）---
     // 印そのものは EtfState.bookmarked が持つ（Notionが単一の真実の源）ので、
     // ここでは「Notionへ書けなかった」ことだけを画面へ伝える。

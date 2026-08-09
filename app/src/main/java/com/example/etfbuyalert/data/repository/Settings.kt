@@ -42,6 +42,23 @@ object Settings {
         return if (v in WATCH_TABS) v else DEFAULT_WATCH_TAB  // 未知の値（旧設定・廃止"all"含む）は既定へ
     }
 
+    // --- 発火中タブの中の「ライン方式」絞り込み ---
+    // 同じ「発火」でも方式によって意味がまったく違うので、混ぜて見ると判断を誤る。
+    //   ADP型   … 優良株プールが割安水準に到達＝事前登録した条件の成立（意味がある）
+    //   RTX自動 … 機械が急落を拾っただけの候補。10年バックテストで優位性なしと確認済み
+    //   手動    … 自分で方針を決めた狙い値
+    //   MA200   … 200日線を割っただけ（値ごろ感の根拠は無い）
+    // タブを増やすと横スクロールが長くなるため、発火中タブの中の絞り込みとして持たせる。
+    const val KEY_FIRED_METHOD = "fired_method_filter"
+    const val FIRED_METHOD_ALL = "all"
+    val FIRED_METHODS = listOf(FIRED_METHOD_ALL, "adp", "manual", "ma200", "rtx")
+    const val DEFAULT_FIRED_METHOD = FIRED_METHOD_ALL
+
+    fun firedMethod(ctx: Context): String {
+        val v = prefs(ctx).getString(KEY_FIRED_METHOD, DEFAULT_FIRED_METHOD).orEmpty()
+        return if (v in FIRED_METHODS) v else DEFAULT_FIRED_METHOD
+    }
+
     // --- チェック間隔（分）---
     const val KEY_INTERVAL = "check_interval_min"
     const val DEFAULT_INTERVAL = 60
