@@ -25,6 +25,20 @@ object AssetKind {
     const val METHOD_MANUAL = "手動"
 
     /**
+     * ライン方式の画面表示名（表示名⇔内部キーの対応はここに単一定義）。
+     * 内部値「ADP型」「RTX自動」はNotion列の値としてPC側ジョブと共有しているため変えられないが、
+     * 画面にそのまま出すと由来（米国株ADP・RTX社の下落型）を知らないと意味が取れない。
+     * ユーザーに伝わる言葉に写して表示する（2026-08-10 ユーザー要望）。
+     */
+    fun methodLabel(lineMethod: String?): String = when (lineMethod) {
+        METHOD_ADP -> "配当割安"      // 優良増配株が平常より割安な利回り水準に到達する型
+        METHOD_RTX -> "急落優良"      // イベント急落した優良大型株の機械検知（タブ名と同じ）
+        METHOD_MA200 -> "200日線"
+        METHOD_MANUAL -> "手動"
+        else -> lineMethod ?: "—"
+    }
+
+    /**
      * 種別を判定する。
      * ETFの判定はティッカー対応表（EtfCategory）を正とし、方式=MA200も補助的に見る。
      *   - EtfCategory の対応表に載っている＝ETF（VOO/QQQ/SMH/URA/1540.T 等）
