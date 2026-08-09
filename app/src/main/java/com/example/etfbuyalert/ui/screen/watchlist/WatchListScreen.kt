@@ -135,7 +135,7 @@ fun WatchListScreen(
                                     "この方式で発火中の銘柄はありません\n（「すべて」に戻すと他の方式の発火が見られます）"
                                 watchTab == Settings.TAB_FIRED -> "いま発火中（ライン到達）の銘柄はありません"
                                 watchTab == Settings.TAB_BOOKMARK -> "ブックマークした銘柄はありません\n（カード右上の★、またはNotionの「ブックマーク」列で登録できます）"
-                                watchTab == Settings.TAB_RTX -> "急落優良（イベント急落した優良大型株）の検知はいまありません\n（reversal-screener のRTX型検知が自動登録します。候補であり推奨ではありません）"
+                                watchTab == Settings.TAB_RTX -> "急落優良（イベント急落した優良大型株）の検知はいまありません\n（PC側の急落検知ジョブが自動で登録します。候補であり推奨ではありません）"
                                 else -> "この種別に該当する銘柄はありません"
                             },
                             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -190,12 +190,14 @@ private data class MethodFilter(
     val match: (EtfState) -> Boolean
 )
 
+// 表示名は AssetKind.methodLabel に単一定義（「ADP型」「RTX」のままでは意味が取れないため
+// 「配当割安」「急落優良」へ写して表示する。内部キー・Notion値は従来どおり）
 private val METHOD_FILTERS: List<MethodFilter> = listOf(
     MethodFilter(Settings.FIRED_METHOD_ALL, "すべて") { true },
-    MethodFilter("adp", "ADP型") { it.lineMethod == AssetKind.METHOD_ADP },
-    MethodFilter("manual", "手動") { it.lineMethod == AssetKind.METHOD_MANUAL },
-    MethodFilter("ma200", "200日線") { it.lineMethod == AssetKind.METHOD_MA200 },
-    MethodFilter("rtx", "RTX") { it.lineMethod == AssetKind.METHOD_RTX },
+    MethodFilter("adp", AssetKind.methodLabel(AssetKind.METHOD_ADP)) { it.lineMethod == AssetKind.METHOD_ADP },
+    MethodFilter("manual", AssetKind.methodLabel(AssetKind.METHOD_MANUAL)) { it.lineMethod == AssetKind.METHOD_MANUAL },
+    MethodFilter("ma200", AssetKind.methodLabel(AssetKind.METHOD_MA200)) { it.lineMethod == AssetKind.METHOD_MA200 },
+    MethodFilter("rtx", AssetKind.methodLabel(AssetKind.METHOD_RTX)) { it.lineMethod == AssetKind.METHOD_RTX },
 )
 
 /**

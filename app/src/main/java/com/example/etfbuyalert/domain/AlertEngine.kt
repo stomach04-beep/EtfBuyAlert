@@ -158,7 +158,7 @@ object AlertEngine {
      */
     private fun reason(state: EtfState, fallback: String): String = when (state.lineMethod) {
         AssetKind.METHOD_ADP ->
-            "質ゲート通過の増配株が、平常より高い利回り水準まで売られています（ADP型の待ち構え）。減配・業績悪化が無いかだけ確認を。"
+            "質ゲート通過の増配株が、平常より高い利回り水準まで売られています（配当割安の待ち構え）。減配・業績悪化が無いかだけ確認を。"
         else -> fallback
     }
 
