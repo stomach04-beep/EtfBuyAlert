@@ -45,6 +45,12 @@ data class EtfState(
     // （プロパティ未新設のDBでもfalse扱いになるだけでクラッシュしない）。
     val rsiWatch: Boolean = false,       // RSI利確監視のON/OFF（Notion同期）
 
+    // --- ニュース警告（PC側の fired_news_check.py がNotionへ毎日書き込む）---
+    // 発火中の銘柄に「なぜ下げたか」の材料（下方修正・増資・急落など）が見つかったときの警告文。
+    // Notionが単一の真実の源で、アプリは読むだけ（書かない）。
+    // 【要注意】部分が前回と変わったときだけアプリから通知する（判定は domain.NewsWarning）。
+    val newsWarning: String? = null,
+
     // --- ブックマーク（★。打診買い・押し目買いの方針を定めた銘柄の印）---
     // Notionの「ブックマーク」checkbox列と双方向で同期する（Notionが単一の真実の源）。
     // PC側（Claude）で方針を決めたときにNotionのチェックを入れれば、アプリの★タブに出る。

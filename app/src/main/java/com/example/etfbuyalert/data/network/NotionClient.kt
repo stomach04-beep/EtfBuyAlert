@@ -21,6 +21,10 @@ object NotionClient {
     // ここがNotion側の列名とズレると「黙って書き込まれない／常にfalse」になる（DRY）。
     const val PROP_BOOKMARK = "ブックマーク"
 
+    // ニュース警告列（PC側の fired_news_check.py が書き込み、アプリは読むだけ）。
+    // Python側の PROP_WARN と同じ列名。ズレると黙って常に空になるので定数化。
+    const val PROP_NEWS_WARN = "ニュース警告"
+
     // 生存監視（ハートビート）用。アプリが同期のたびに「アプリ最終同期」へ現在時刻を書く。
     // 外部の見張りジョブ（PC/VPS）はこの時刻だけを見て、アプリが止まっていないかを判断する。
     // ・ティッカー _APP_HEARTBEAT の行は銘柄ではないので価格取得も通知も行わない
@@ -50,7 +54,8 @@ object NotionClient {
         val sector: String?,    // 「業種」セレクト列（化学/医薬品/機械/サービス 等）。個別株はこちらが入る
         val lineMethod: String?, // 「ライン計算方式」セレクト列（ADP型 / MA200 / 手動）＝ラインの持ち主
         val rsiWatch: Boolean,  // 「RSI利確監視」checkbox列。列が未新設のDBではfalse扱い
-        val bookmarked: Boolean // 「ブックマーク」checkbox列。方針を定めた銘柄の印（★タブ）
+        val bookmarked: Boolean, // 「ブックマーク」checkbox列。方針を定めた銘柄の印（★タブ）
+        val newsWarning: String? // 「ニュース警告」rich_text列。PC側ジョブが書く下落理由の警告文
     )
 
     // 同期結果（成功/失敗とメッセージを呼び出し側へ返す）
@@ -301,7 +306,9 @@ object NotionClient {
                         // 週足RSI過熱利確のオプトイン。列がまだ無いDBでもfalseになるだけ（クラッシュしない）
                         rsiWatch = checkbox(props, "RSI利確監視"),
                         // ブックマーク（★）。PC側で方針を決めた銘柄にチェックを入れるとアプリの★タブに出る
-                        bookmarked = checkbox(props, PROP_BOOKMARK)
+                        bookmarked = checkbox(props, PROP_BOOKMARK),
+                        // ニュース警告。列が未新設・空のDBでも空文字→nullになるだけ（クラッシュしない）
+                        newsWarning = richText(props, PROP_NEWS_WARN).takeIf { it.isNotBlank() }
                     )
                 )
             }
@@ -325,7 +332,10 @@ object NotionClient {
         val p = prop(props, name) ?: return ""
         val arr = p.getAsJsonArray("rich_text") ?: return ""
         if (arr.size() == 0) return ""
-        return arr[0].asJsonObject.get("plain_text")?.takeIf { !it.isJsonNull }?.asString ?: ""
+        // 長文（ニュース警告など）はNotion側で複数セグメントに分かれることがあるため全部つなぐ
+        return arr.joinToString("") { el ->
+            el.asJsonObject.get("plain_text")?.takeIf { !it.isJsonNull }?.asString ?: ""
+        }
     }
 
     private fun title(props: JsonObject, name: String): String {
