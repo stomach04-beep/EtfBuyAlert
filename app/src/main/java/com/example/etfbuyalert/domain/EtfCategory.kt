@@ -52,11 +52,23 @@ object EtfCategory {
         // コモディティ・金（円建て・東京上場。ティッカーはYahoo記号そのまま .T 付き）
         "1540.T" to "コモディティ・金",   // 純金上場信託（現物裏付け）
         "1326.T" to "コモディティ・金",   // SPDRゴールド・シェア 東証
+
+        // 東証上場の円建てETF（2026-08-11 追加。対応表に無く個別株扱いになっていた）
+        "2521.T" to "米国指数",           // 上場S&P500 為替ヘッジあり
+        "1306.T" to "日本株指数",         // NEXT FUNDS TOPIX連動型上場投信
+        "1570.T" to "日本株指数",         // NEXT FUNDS 日経レバレッジ・インデックス連動型上場投信
+        "2621.T" to "債券",               // iシェアーズ 米国債20年超 為替ヘッジあり
     )
 
     // 表示順（この順で見出しを並べる。表に無いカテゴリは後ろ、未分類は最後）。
     private val ORDER: List<String> = listOf(
-        "米国指数", "グロース", "半導体", "原子力・ウラン", "コモディティ・金",
+        "米国指数", "日本株指数", "グロース", "半導体", "原子力・ウラン", "コモディティ・金", "債券",
+    )
+
+    // 銘柄名だけからETFらしさを判定するときのキーワード（対応表への登録漏れの保険）。
+    // 会社名にはまず出てこない語だけに絞る（「ファンド」は投資法人/REITが引っかかるので入れない）。
+    private val NAME_HINTS: List<String> = listOf(
+        "ETF", "ETN", "上場投信", "上場信託", "連動型", "シェアーズ", "SPDR",
     )
 
     // ティッカーからカテゴリを引く（対応表に無ければ「未分類」）。
@@ -71,6 +83,16 @@ object EtfCategory {
     fun isEtf(ticker: String?): Boolean {
         val key = ticker?.trim()?.uppercase() ?: return false
         return MAP.containsKey(key)
+    }
+
+    // 銘柄名がETFの名前か（MAPへの登録漏れを拾う保険）。
+    // 新しいETFがNotionに増えたときアプリを直さなくてもETFタブに出るようにするための補助であり、
+    // 本筋はMAPに1行足すこと（カテゴリ分けはMAPにしか無いため）。
+    fun looksLikeEtfName(name: String?): Boolean {
+        val n = name?.trim() ?: return false
+        if (n.isEmpty()) return false
+        val upper = n.uppercase()
+        return NAME_HINTS.any { upper.contains(it.uppercase()) }
     }
 
     // カテゴリ名の並び順スコア（小さいほど先頭、未分類は最後）。

@@ -40,17 +40,21 @@ object AssetKind {
 
     /**
      * 種別を判定する。
-     * ETFの判定はティッカー対応表（EtfCategory）を正とし、方式=MA200も補助的に見る。
-     *   - EtfCategory の対応表に載っている＝ETF（VOO/QQQ/SMH/URA/1540.T 等）
-     *   - ライン計算方式=MA200 ＝ ETF用の200日線ジョブが回している行＝ETF
+     * ETFかどうかは「銘柄そのものの性質」で決める。ライン計算方式は見ない。
+     *   1) EtfCategory の対応表に載っている＝ETF（VOO/QQQ/SMH/URA/1540.T 等）
+     *   2) 銘柄名がETF名（「上場投信」「ETF」等）＝ETF（対応表への登録漏れの保険）
      * それ以外は個別株とみなし、円建て（.T）なら日本株、そうでなければ米国株。
-     * ※「方式=ADP型なら個別株」とは判定しない。将来ETFをADP型で運用する可能性があり、
-     *   方式は"どの式で計算するか"であって"何の商品か"ではないため。
+     *
+     * ⚠️【2026-08-11 修正】以前は「ライン計算方式=MA200 ならETF」という判定を併用していたが、
+     * これは誤りだった。MA200は"どの式でラインを計算するか"であって"何の商品か"ではない。
+     * 実際に個別株（9843ニトリ・9503関西電力・1332ニッスイ）を200日線方式で監視し始めた結果、
+     * それらがETFタブに並んでしまった。方式=ADP型を個別株と決めつけないのと同じ理由で、
+     * 方式からは種別を決めない。
      */
-    fun of(state: EtfState): Kind = of(state.ticker, state.lineMethod)
+    fun of(state: EtfState): Kind = of(state.ticker, state.name)
 
-    fun of(ticker: String?, lineMethod: String?): Kind = when {
-        EtfCategory.isEtf(ticker) || lineMethod == METHOD_MA200 -> Kind.ETF
+    fun of(ticker: String?, name: String?): Kind = when {
+        EtfCategory.isEtf(ticker) || EtfCategory.looksLikeEtfName(name) -> Kind.ETF
         Symbol.isJp(ticker) -> Kind.JP_STOCK
         else -> Kind.US_STOCK
     }
