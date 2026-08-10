@@ -17,8 +17,10 @@ data class EtfState(
     val market: String? = null,  // NASDAQ / NYSE / 東証プライム 等
     val category: String? = null, // テーマ/セクター分類（例: 半導体・米国指数）。グループ表示に使う
     val sector: String? = null,   // Notionの「業種」列（化学/医薬品/機械/サービス 等）。個別株の補足表示用
-    // Notionの「ライン計算方式」列（ADP型 / MA200 / 手動）＝どのジョブがラインの持ち主か。
-    // 種別判定(AssetKind)と、詳細画面での説明表示に使う。
+    // Notionの「ライン計算方式」列（ADP型 / MA200 / RTX自動 / 手動）＝どのジョブがラインの持ち主か。
+    // 発火中タブの方式チップと、詳細画面での説明表示に使う。
+    // ※種別判定(AssetKind)には使わない。方式は「どの式で計算するか」であって「何の商品か」ではない
+    //   （個別株をMA200方式で監視するとETFタブに出る不具合があった。2026-08-11修正）。
     val lineMethod: String? = null,
 
     // --- Notionから同期した買い時ライン（通貨は銘柄による。円建てなら円）---
