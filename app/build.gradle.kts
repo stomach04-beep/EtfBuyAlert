@@ -17,8 +17,8 @@ android {
         targetSdk = 36
         // 2026-07-29: グループ表示→月次ライン→判定見直し→まとめ通知→週足RSI→MA200端末内計算
         // →4タブ化→★ブックマーク と8回の機能追加を経て 1.0 のままだったので実態へ。
-        versionCode = 12
-        versionName = "1.12"  // 2026-08-10: 方式の表示名を平易化（ADP型→配当割安 / RTX→急落優良）
+        versionCode = 13
+        versionName = "1.13"  // 2026-08-10: ニュース警告をアプリ内通知・カード表示に（LINE通知から移行）
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

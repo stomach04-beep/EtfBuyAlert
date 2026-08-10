@@ -15,6 +15,7 @@ import com.example.etfbuyalert.domain.Freshness
 import com.example.etfbuyalert.domain.Money
 import com.example.etfbuyalert.domain.Symbol
 import com.example.etfbuyalert.domain.Ma200Lines
+import com.example.etfbuyalert.domain.NewsWarning
 import com.example.etfbuyalert.domain.WeeklyRsi
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -66,8 +67,13 @@ class EtfRepository(private val context: Context) {
     fun update(type: UpdateType): Boolean {
         val data = storage.load()
 
+        // このチェックで出たアラートを一旦ためて、最後にまとめて1件の通知にする
+        // （複数銘柄が同時に到達したとき、通知が何件も個別に飛んでこないように）。
+        // ニュース警告（同期時に検知）もここに積み、価格アラートと同じまとめ通知に入れる。
+        val pending = ArrayList<NotificationHelper.AlertItem>()
+
         // 1) Notion同期（best-effort：失敗してもキャッシュのstatesで続行）
-        syncConfigs(data)
+        syncConfigs(data, pending)
 
         // 2) 各銘柄の価格を取得して買い時判定
         val toggles = AlertEngine.Toggles(
@@ -78,9 +84,6 @@ class EtfRepository(private val context: Context) {
         )
         val now = System.currentTimeMillis()
         val updated = ArrayList<EtfState>(data.etfStates.size)
-        // このチェックで出たアラートを一旦ためて、最後にまとめて1件の通知にする
-        // （複数銘柄が同時に到達したとき、通知が何件も個別に飛んでこないように）
-        val pending = ArrayList<NotificationHelper.AlertItem>()
         var fetchOkCount = 0  // 価格取得に成功した銘柄数（0件なら失敗としてログに残す）
         for (st in data.etfStates) {
             val quote = YahooFinanceClient.fetchQuote(st.ticker)
@@ -204,7 +207,9 @@ class EtfRepository(private val context: Context) {
         )
     }
 
-    private fun syncConfigs(data: AppData) {
+    // pending: 同期中に気づいたアラート（ニュース警告の新規・変化）を積む先。
+    // 呼び出し元 update() が価格アラートと合わせて最後にまとめて通知する。
+    private fun syncConfigs(data: AppData, pending: MutableList<NotificationHelper.AlertItem>) {
         val token = Settings.notionToken(context)
         val db = Settings.notionDbId(context)
         val res = NotionClient.fetchWatchedEtfs(token, db)
@@ -265,6 +270,8 @@ class EtfRepository(private val context: Context) {
                 // Notionの「ブックマーク」にチェックを入れれば、次の同期で★タブに出る。
                 // アプリで押した分はその場でNotionへ書き戻しているので値は一致する。
                 bookmarked = n.bookmarked,
+                // ニュース警告はNotionが単一の真実の源（PC側ジョブが書き、アプリは読むだけ）
+                newsWarning = n.newsWarning,
                 weeklyRsi = prev?.weeklyRsi,
                 weeklyRsiWeek = prev?.weeklyRsiWeek,
                 weeklyRsiAsOf = prev?.weeklyRsiAsOf ?: 0L,
@@ -295,6 +302,28 @@ class EtfRepository(private val context: Context) {
                     context, "急落優良",
                     "急落優良に新規 ${newRtx.size}件", body
                 )
+            }
+        }
+
+        // ニュース警告の新規・変化をアプリから通知する（以前はPC側ジョブがLINEで送っていた分）。
+        // 比較は【要注意】部分の本文だけで行う（NewsWarning.criticalPart）。
+        // 警告文の先頭には照合日が付き、ジョブが走るたび日付だけが変わるため、
+        // 全文比較だと内容が同じでも毎日鳴ってしまう。
+        // 初回同期（既存stateが空＝インストール直後）は既存の警告が全部「新規」に見えて
+        // 大量通知になるので出さない（急落優良の新規通知と同じ流儀）。
+        if (data.etfStates.isNotEmpty()) {
+            val prevByPage = data.etfStates.associateBy { it.pageId }
+            for (m in merged) {
+                val sig = NewsWarning.criticalPart(m.newsWarning)
+                if (sig.isEmpty()) continue  // 【要注意】無し（該当なし・参考のみ）は通知しない
+                val prevSig = NewsWarning.criticalPart(prevByPage[m.pageId]?.newsWarning)
+                if (sig == prevSig) continue // 内容が前回と同じなら鳴らさない
+                pending.add(NotificationHelper.AlertItem(
+                    category = "ニュース警告",
+                    title = "⚠ ${m.name}（${Symbol.display(m.ticker)}）に警告",
+                    message = "発火中ですが一時的な下落と言い切れない材料があります。\n" +
+                            "$sig\nラインに触れただけで買わず、内容を確認してください。"
+                ))
             }
         }
 

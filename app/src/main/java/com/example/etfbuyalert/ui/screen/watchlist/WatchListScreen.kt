@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.etfbuyalert.data.model.EtfState
@@ -28,6 +29,7 @@ import com.example.etfbuyalert.domain.AlertEngine
 import com.example.etfbuyalert.domain.AssetKind
 import com.example.etfbuyalert.domain.Freshness
 import com.example.etfbuyalert.domain.Money
+import com.example.etfbuyalert.domain.NewsWarning
 import com.example.etfbuyalert.domain.Symbol
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -475,6 +477,20 @@ private fun EtfCard(
                     fontSize = 12.sp,
                     fontWeight = rsiWeight,
                     color = rsiColor
+                )
+            }
+            // ニュース警告（PC側の照合ジョブがNotionへ書いた【要注意】材料。表示判定は NewsWarning が単一定義）
+            // 発火していても「買ってはいけない発火」かもしれない印なので、警告色で目立たせる
+            val newsText = NewsWarning.displayText(st.newsWarning)
+            if (newsText != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "⚠ $newsText",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFFB74D),
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             Spacer(Modifier.height(10.dp))
