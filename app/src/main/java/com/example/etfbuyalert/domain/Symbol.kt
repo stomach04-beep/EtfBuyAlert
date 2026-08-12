@@ -43,4 +43,58 @@ object Symbol {
         val t = ticker?.trim().orEmpty()
         return if (isJp(t)) t.dropLast(2) else t
     }
+
+    /**
+     * 通知タイトル・本文で使う「銘柄名（ティッカー）」の表示文字列を作る。
+     *
+     * 【なぜ必要か】Notionの「銘柄名」列は入力者によって表記が揃っておらず、
+     * 既にティッカーを含む行がある（例: 銘柄名 "アップル（AAPL）"）。
+     * それに対して機械的に "（ティッカー）" を足すと
+     * 「アップル（AAPL）（AAPL）に警告」と二重表示になる。
+     * 組み立て方を通知ごとに書くとまたズレるので、ここ1か所に集約する（DRY）。
+     *
+     * 名前に既にティッカーが出ていればそのまま、出ていなければ "（記号）" を足す。
+     */
+    fun label(name: String?, ticker: String?): String {
+        val n = name?.trim().orEmpty()
+        val t = display(ticker)
+        if (t.isEmpty()) return n
+        if (n.isEmpty()) return t
+        return if (containsSymbol(n, t)) n else "$n（$t）"
+    }
+
+    /**
+     * 銘柄名の中にティッカーが（表記ゆれ込みで）現れているか。
+     * 日本株は名前側が "1540" とも "1540.T" とも書かれうる。
+     * 米国のクラス株は Notion "BF.B" ／ 正規形 "BF-B" と区切り文字が揺れる。
+     */
+    private fun containsSymbol(name: String, symbol: String): Boolean {
+        val upper = name.uppercase()
+        val variants = linkedSetOf(
+            symbol.uppercase(),
+            symbol.uppercase().replace('-', '.'),
+            symbol.uppercase().replace('.', '-')
+        )
+        return variants.any { containsAsWord(upper, it) }
+    }
+
+    /**
+     * 「独立した記号として」含まれているかを見る。
+     * 単純な contains だと "T"（AT&T）が名前の中のどのTにも当たってしまうため、
+     * 前後の文字が英数字でないことを条件にする。
+     */
+    private fun containsAsWord(haystack: String, needle: String): Boolean {
+        if (needle.isEmpty()) return false
+        var from = 0
+        while (true) {
+            val i = haystack.indexOf(needle, from)
+            if (i < 0) return false
+            val before = i - 1
+            val after = i + needle.length
+            val okBefore = before < 0 || !haystack[before].isLetterOrDigit()
+            val okAfter = after >= haystack.length || !haystack[after].isLetterOrDigit()
+            if (okBefore && okAfter) return true
+            from = i + 1
+        }
+    }
 }

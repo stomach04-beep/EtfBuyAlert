@@ -17,8 +17,8 @@ android {
         targetSdk = 36
         // 2026-07-29: グループ表示→月次ライン→判定見直し→まとめ通知→週足RSI→MA200端末内計算
         // →4タブ化→★ブックマーク と8回の機能追加を経て 1.0 のままだったので実態へ。
-        versionCode = 15
-        versionName = "1.15"  // 2026-08-12: 履歴タブに通知種類の絞り込みチップ＋種類バッジを追加
+        versionCode = 16
+        versionName = "1.16"  // 2026-08-12: 通知タイトルの銘柄名二重表示を修正（Symbol.labelに集約）
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

@@ -296,7 +296,8 @@ class EtfRepository(private val context: Context) {
                 it.lineMethod == AssetKind.METHOD_RTX && it.pageId !in prevRtxIds
             }
             if (newRtx.isNotEmpty()) {
-                val body = newRtx.joinToString("\n") { "・${it.name}（${it.ticker}）" } +
+                // 銘柄名＋記号の組み立ては Symbol.label に集約（名前に既に記号が入っていても二重にしない）
+                val body = newRtx.joinToString("\n") { "・${Symbol.label(it.name, it.ticker)}" } +
                         "\nイベント急落型として検知。候補であり推奨ではありません（急落優良タブ参照）"
                 NotificationHelper.sendAlert(
                     context, "急落優良",
@@ -320,7 +321,8 @@ class EtfRepository(private val context: Context) {
                 if (sig == prevSig) continue // 内容が前回と同じなら鳴らさない
                 pending.add(NotificationHelper.AlertItem(
                     category = "ニュース警告",
-                    title = "⚠ ${m.name}（${Symbol.display(m.ticker)}）に警告",
+                    // Notionの銘柄名に既にティッカーが入っている行があるため Symbol.label で二重表示を防ぐ
+                    title = "⚠ ${Symbol.label(m.name, m.ticker)}に警告",
                     message = "発火中ですが一時的な下落と言い切れない材料があります。\n" +
                             "$sig\nラインに触れただけで買わず、内容を確認してください。"
                 ))
