@@ -16,6 +16,7 @@ import com.example.etfbuyalert.domain.Money
 import com.example.etfbuyalert.domain.Symbol
 import com.example.etfbuyalert.domain.Ma200Lines
 import com.example.etfbuyalert.domain.NewsWarning
+import com.example.etfbuyalert.domain.SellRules
 import com.example.etfbuyalert.domain.WeeklyRsi
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -31,6 +32,11 @@ class EtfRepository(private val context: Context) {
     // MA200ラインの再計算間隔。PC版は4週ごとの月次ジョブで、200日線は1日ではほぼ動かない。
     // 毎回1年ぶんの日足を全銘柄ぶん取りに行くと通信も電池も無駄なので7日に1回までとする。
     private val MA_LINES_REFRESH_MS = 7L * 24 * 60 * 60 * 1000
+
+    // 売り時判定の再計算間隔。判定は日足の確定終値ベースなので1日1回で十分だが、
+    // 大引け（15:10）をまたいだ最初のチェックで当日終値を拾えるよう6時間とする
+    // （対象は保有中の日本株個別株のみ＝件数が少なく通信負荷は小さい）。
+    private val SELL_REFRESH_MS = 6L * 60 * 60 * 1000
 
     fun load(): AppData = storage.load()
 
@@ -113,6 +119,10 @@ class EtfRepository(private val context: Context) {
             // だったため、PCを起動しない月はラインが古いまま止まっていた。
             // 取得失敗時は前回のライン（＝Notion値か前回計算値）を維持する＝週足RSIと同じ流儀。
             s = refreshMa200Lines(s, now)
+
+            // 売り時シグナル（保有中の日本株個別株のみ。検証済みルール＝SellRules参照）。
+            // 取得失敗時は前回値キャッシュで継続（価格取得・週足RSIと同じ流儀）。
+            s = refreshSellSignal(s, now)
 
             // 7日超の古い価格ではライン到達判定をしない（evaluateの入口で鮮度ガード）
             val (newState, alerts) = AlertEngine.evaluate(s, toggles, now)
@@ -207,6 +217,47 @@ class EtfRepository(private val context: Context) {
         )
     }
 
+    /**
+     * 売り時シグナルを再計算する（つるはし銘柄の売り時検証 2026-08-13 の実装）。
+     *
+     * 対象＝保有中(purchased)の日本株個別株で「売りルール除外」がOFFの銘柄のみ。
+     *   ・日本株のみ … 検証エビデンス（J-Quants 1,837事象・8年全勝）が日本株だけのため
+     *   ・保有中のみ … 売りサインは持っていない銘柄には意味がなく、3年ぶんの日足取得を
+     *                  全90銘柄でやると通信も電池も無駄なため（損切り通知と同じ考え方）
+     * 判定は日足の確定終値ベース（SellRulesが当日未確定バーを落とす）なので、
+     * 再計算は6時間に1回まで。失敗時は前回のシグナルを維持する。
+     */
+    private fun refreshSellSignal(st: EtfState, now: Long): EtfState {
+        if (st.sellExcluded || !st.purchased) return clearIfStale(st)
+        if (!SellRules.isEligible(st.ticker, st.name)) return st
+        val elapsed = now - st.sellAsOf
+        if (st.sellAsOf > 0L && elapsed < SELL_REFRESH_MS) return st
+
+        // 3年の日足（アーム判定に12M+アーム窓24Mが要るため）。失敗時は前回値を維持
+        val hist = YahooFinanceClient.fetchHistory(st.ticker, "3y") ?: return st
+        val sig = SellRules.calculate(hist, now) ?: run {
+            Log.w(TAG, "${st.ticker}: 売り時判定に必要な日足が不足（前回値を維持）")
+            return st
+        }
+        return st.copy(
+            sellArmed = sig.armed,
+            sellArmDate = sig.armDate,
+            sellPeak = sig.peak,
+            sellDropPct = sig.dropPct,
+            sellMa50 = sig.ma50,
+            sellTrailFired = sig.trailFired,
+            sellMa50Fired = sig.ma50Fired,
+            sellAsOf = now,
+        )
+    }
+
+    // 除外ON・売却済みに変わった銘柄はシグナル表示を消す（通知フラグも寝かせる）
+    private fun clearIfStale(st: EtfState): EtfState =
+        if (st.sellArmed) st.copy(
+            sellArmed = false, sellTrailFired = false, sellMa50Fired = false,
+            sellTrailArmed = false, sellMa50Armed = false,
+        ) else st
+
     // pending: 同期中に気づいたアラート（ニュース警告の新規・変化）を積む先。
     // 呼び出し元 update() が価格アラートと合わせて最後にまとめて通知する。
     private fun syncConfigs(data: AppData, pending: MutableList<NotificationHelper.AlertItem>) {
@@ -275,12 +326,24 @@ class EtfRepository(private val context: Context) {
                 weeklyRsi = prev?.weeklyRsi,
                 weeklyRsiWeek = prev?.weeklyRsiWeek,
                 weeklyRsiAsOf = prev?.weeklyRsiAsOf ?: 0L,
+                // 売り時点灯：除外ON/OFFはNotionが真実の源、計算値・通知済みフラグは前回を引き継ぐ
+                sellExcluded = n.sellExcluded,
+                sellArmed = prev?.sellArmed ?: false,
+                sellArmDate = prev?.sellArmDate,
+                sellPeak = prev?.sellPeak,
+                sellDropPct = prev?.sellDropPct,
+                sellMa50 = prev?.sellMa50,
+                sellTrailFired = prev?.sellTrailFired ?: false,
+                sellMa50Fired = prev?.sellMa50Fired ?: false,
+                sellAsOf = prev?.sellAsOf ?: 0L,
                 dipArmed = prev?.dipArmed ?: false,
                 deepArmed = prev?.deepArmed ?: false,
                 breakoutArmed = prev?.breakoutArmed ?: false,
                 stopArmed = prev?.stopArmed ?: false,
                 rsiTake1Armed = prev?.rsiTake1Armed ?: false,
                 rsiTake2Armed = prev?.rsiTake2Armed ?: false,
+                sellTrailArmed = prev?.sellTrailArmed ?: false,
+                sellMa50Armed = prev?.sellMa50Armed ?: false,
                 lastZone = prev?.lastZone ?: ""
             )
         }

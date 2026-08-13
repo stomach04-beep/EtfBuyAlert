@@ -17,8 +17,8 @@ android {
         targetSdk = 36
         // 2026-07-29: グループ表示→月次ライン→判定見直し→まとめ通知→週足RSI→MA200端末内計算
         // →4タブ化→★ブックマーク と8回の機能追加を経て 1.0 のままだったので実態へ。
-        versionCode = 16
-        versionName = "1.16"  // 2026-08-12: 通知タイトルの銘柄名二重表示を修正（Symbol.labelに集約）
+        versionCode = 17
+        versionName = "1.17"  // 2026-08-13: 売り時点灯（保有中の日本株・トレール-15%＋50日線割れ。SellRules）
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

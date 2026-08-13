@@ -34,6 +34,9 @@ object NotionClient {
     const val HEARTBEAT_TICKER = "_APP_HEARTBEAT"
     const val PROP_HEARTBEAT = "アプリ最終同期"
 
+    // 売りルール除外列（売り時点灯の対象から外す逃し弁）。列が未新設でもfalse扱いで安全。
+    const val PROP_SELL_EXCLUDE = "売りルール除外"
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
@@ -55,7 +58,8 @@ object NotionClient {
         val lineMethod: String?, // 「ライン計算方式」セレクト列（ADP型 / MA200 / 手動）＝ラインの持ち主
         val rsiWatch: Boolean,  // 「RSI利確監視」checkbox列。列が未新設のDBではfalse扱い
         val bookmarked: Boolean, // 「ブックマーク」checkbox列。方針を定めた銘柄の印（★タブ）
-        val newsWarning: String? // 「ニュース警告」rich_text列。PC側ジョブが書く下落理由の警告文
+        val newsWarning: String?, // 「ニュース警告」rich_text列。PC側ジョブが書く下落理由の警告文
+        val sellExcluded: Boolean // 「売りルール除外」checkbox列。ONなら売り時点灯の対象外
     )
 
     // 同期結果（成功/失敗とメッセージを呼び出し側へ返す）
@@ -308,7 +312,9 @@ object NotionClient {
                         // ブックマーク（★）。PC側で方針を決めた銘柄にチェックを入れるとアプリの★タブに出る
                         bookmarked = checkbox(props, PROP_BOOKMARK),
                         // ニュース警告。列が未新設・空のDBでも空文字→nullになるだけ（クラッシュしない）
-                        newsWarning = richText(props, PROP_NEWS_WARN).takeIf { it.isNotBlank() }
+                        newsWarning = richText(props, PROP_NEWS_WARN).takeIf { it.isNotBlank() },
+                        // 売りルール除外。列が未新設でもfalse＝監視対象のまま（安全側）
+                        sellExcluded = checkbox(props, PROP_SELL_EXCLUDE)
                     )
                 )
             }

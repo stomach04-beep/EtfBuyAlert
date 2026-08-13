@@ -118,6 +118,46 @@ object AlertEngine {
             })
         }
 
+        // --- 売り時点灯（保有中の日本株個別株のみ。ルールと根拠は SellRules 参照）---
+        // 判定値（trailFired/ma50Fired）は日足の確定終値ベースでEtfRepositoryが計算済み。
+        // ここでは armed フラグ方式で「点灯した瞬間だけ」通知する。
+        // 解除（再arm）は SellRules のヒステリシス値で判定：
+        //   ① トレール … 高値から-13%より浅く戻ったら解除（-15%↔-13%の間は現状維持）
+        //   ② 50日線   … 終値が線+1%より上に戻ったら解除
+        if (state.sellArmed && !state.sellExcluded && state.purchased) {
+            val drop = state.sellDropPct
+            // 直近確定終値（peakと下落率から復元。表示用）
+            val lastPx = state.sellPeak?.let { p -> p * (1 + (drop ?: 0.0) / 100) }
+            // ① トレール-15%
+            s = s.copy(sellTrailArmed = evalLine(
+                fire = state.sellTrailFired,
+                release = drop != null && drop > -SellRules.TRAIL_REARM_PCT * 100.0,
+                armed = state.sellTrailArmed, enabled = true
+            ) {
+                alerts += Alert("売り時", "🟠 ${Symbol.display(state.ticker)} 売り時サイン（高値-15%）",
+                    "${state.name}\n急騰後の最高値 ${Money.format(state.ticker, state.sellPeak)} から " +
+                        String.format("%.1f%%", drop ?: 0.0) + " 下落（終値 ${Money.format(state.ticker, lastPx)}）。\n" +
+                        "検証（日本株1,837事象）では、上がりきった銘柄を持ち続けると中央値0.80倍、" +
+                        "このサインで売ると1.06倍・勝率70%でした。売却か縮小の検討を。")
+            })
+            // ② 50日線割れ
+            val ma = state.sellMa50
+            s = s.copy(sellMa50Armed = evalLine(
+                fire = state.sellMa50Fired,
+                release = ma != null && lastPx != null && lastPx > ma * (1 + SellRules.MA_REARM),
+                armed = state.sellMa50Armed, enabled = true
+            ) {
+                alerts += Alert("売り時", "🟠 ${Symbol.display(state.ticker)} 売り時サイン（50日線割れ）",
+                    "${state.name}\n終値が50日移動平均 ${Money.format(state.ticker, ma)} を下回りました。\n" +
+                        "急騰後の銘柄がトレンドを失ったサインです（検証：勝率71.5%）。売却か縮小の検討を。")
+            })
+            // 同時点灯の整理：一気に両方点いたら、より深刻な「高値-15%」だけ残す
+            if (alerts.count { it.category == "売り時" } >= 2) {
+                val trail = alerts.first { it.category == "売り時" && it.title.contains("高値-15%") }
+                alerts.removeAll { it.category == "売り時" && it !== trail }
+            }
+        }
+
         // --- 同時発火の整理 ---
         // 一気に深押しラインまで下げた場合、「押し目」と「深押し」が同時に発火して
         // 内容が重複する。より深い「深押し」だけ残す。

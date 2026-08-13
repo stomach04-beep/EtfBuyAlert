@@ -39,6 +39,7 @@ private const val FILTER_OTHER = "other"
 private val HISTORY_FILTERS: List<HistoryFilter> = listOf(
     // 並び順＝まとめ通知の深刻順（損切り→ニュース警告→深押し→押し目→…）に合わせる
     HistoryFilter("stop", "損切り", Color(0xFFEF5350), setOf("損切り")),
+    HistoryFilter("sell", "売り時", Color(0xFFFF9800), setOf("売り時")),
     HistoryFilter("news", "ニュース警告", Color(0xFFFF8A65), setOf("ニュース警告")),
     HistoryFilter("deep", "深押し", Color(0xFF2E7D32), setOf("深押し")),
     HistoryFilter("dip", "押し目", Color(0xFF66BB6A), setOf("押し目")),
