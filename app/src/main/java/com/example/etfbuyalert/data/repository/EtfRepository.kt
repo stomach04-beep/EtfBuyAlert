@@ -367,6 +367,25 @@ class EtfRepository(private val context: Context) {
                     "急落優良に新規 ${newRtx.size}件", body
                 )
             }
+
+            // つるはし候補の新規追加も同じ流儀で1回だけ通知する。
+            // pickaxe-radar（PC側ジョブ）が「テーマの本命が急騰したのに道具側が
+            // 出遅れている」銘柄をNotionへ登録した行（ライン計算方式=つるはし）に気づくための通知。
+            // 買い側ルールは未検証なので文言は必ず「候補」に留める（検証済みなのは売り側だけ）。
+            val prevPickaxeIds = data.etfStates
+                .filter { it.lineMethod == AssetKind.METHOD_PICKAXE }
+                .map { it.pageId }.toSet()
+            val newPickaxe = merged.filter {
+                it.lineMethod == AssetKind.METHOD_PICKAXE && it.pageId !in prevPickaxeIds
+            }
+            if (newPickaxe.isNotEmpty()) {
+                val body = newPickaxe.joinToString("\n") { "・${Symbol.label(it.name, it.ticker)}" } +
+                        "\nテーマ過熱×出遅れとして検知。候補であり買い推奨ではありません（つるはしタブ参照）"
+                NotificationHelper.sendAlert(
+                    context, "つるはし",
+                    "⛏ つるはし候補に新規 ${newPickaxe.size}件", body
+                )
+            }
         }
 
         // ニュース警告の新規・変化をアプリから通知する（以前はPC側ジョブがLINEで送っていた分）。

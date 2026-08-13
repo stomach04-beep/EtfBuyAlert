@@ -23,6 +23,10 @@ object AssetKind {
     const val METHOD_RTX = "RTX自動"
     // 手動＝自分で狙い値を決めた行。どのジョブも上書きしない。
     const val METHOD_MANUAL = "手動"
+    // つるはし＝pickaxe-radar（テーマ過熱×出遅れ検知）ジョブが持ち主。
+    // 「金鉱（本命）が急騰しているのに道具側（つるはし）がまだ出遅れている」候補の自動登録行。
+    // 買い側ルールは未検証＝候補提示であって買い推奨ではない（売り側だけが検証済み）。
+    const val METHOD_PICKAXE = "つるはし"
 
     /**
      * ライン方式の画面表示名（表示名⇔内部キーの対応はここに単一定義）。
@@ -35,6 +39,7 @@ object AssetKind {
         METHOD_RTX -> "急落優良"      // イベント急落した優良大型株の機械検知（タブ名と同じ）
         METHOD_MA200 -> "200日線"
         METHOD_MANUAL -> "手動"
+        METHOD_PICKAXE -> "つるはし"  // テーマ過熱×出遅れの自動候補（タブ名と同じ）
         else -> lineMethod ?: "—"
     }
 

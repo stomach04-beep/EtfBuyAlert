@@ -46,6 +46,7 @@ private val HISTORY_FILTERS: List<HistoryFilter> = listOf(
     HistoryFilter("rsi", "過熱利確", Color(0xFFFFB74D), setOf("過熱利確①", "過熱利確②")),
     HistoryFilter("breakout", "順張り", Color(0xFF42A5F5), setOf("順張り")),
     HistoryFilter("rtx", "急落優良", Color(0xFFBA68C8), setOf("急落優良")),
+    HistoryFilter("pickaxe", "つるはし", Color(0xFF8D6E63), setOf("つるはし")),
     HistoryFilter("stage", "ステージ変化", Color(0xFF90A4AE), setOf("ステージ変化")),
     HistoryFilter("summary", "朝サマリ", Color(0xFF4DB6AC), setOf("朝サマリ")),
     // テスト・沈黙監視・将来増える未知の category はここに落ちる

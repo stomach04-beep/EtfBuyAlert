@@ -30,10 +30,11 @@ object Settings {
     const val TAB_FIRED = "fired"
     const val TAB_BOOKMARK = "bookmark"   // ブックマークした銘柄だけ（印は Bookmarks が持つ）
     const val TAB_RTX = "rtx"             // 急落優良（イベント急落した優良大型株＝RTX自動行）
+    const val TAB_PICKAXE = "pickaxe"     // つるはし（テーマ過熱×出遅れの自動候補＝つるはし行）
     const val TAB_US = "us"
     const val TAB_JP = "jp"
     const val TAB_ETF = "etf"
-    val WATCH_TABS = listOf(TAB_FIRED, TAB_BOOKMARK, TAB_RTX, TAB_JP, TAB_US, TAB_ETF)
+    val WATCH_TABS = listOf(TAB_FIRED, TAB_BOOKMARK, TAB_RTX, TAB_PICKAXE, TAB_JP, TAB_US, TAB_ETF)
     // 既定タブ＝発火中（今すぐ見るべき銘柄が最初に出る）
     const val DEFAULT_WATCH_TAB = TAB_FIRED
 
@@ -51,7 +52,7 @@ object Settings {
     // タブを増やすと横スクロールが長くなるため、発火中タブの中の絞り込みとして持たせる。
     const val KEY_FIRED_METHOD = "fired_method_filter"
     const val FIRED_METHOD_ALL = "all"
-    val FIRED_METHODS = listOf(FIRED_METHOD_ALL, "adp", "manual", "ma200", "rtx")
+    val FIRED_METHODS = listOf(FIRED_METHOD_ALL, "adp", "manual", "ma200", "rtx", "pickaxe")
     const val DEFAULT_FIRED_METHOD = FIRED_METHOD_ALL
 
     fun firedMethod(ctx: Context): String {

@@ -17,8 +17,8 @@ android {
         targetSdk = 36
         // 2026-07-29: グループ表示→月次ライン→判定見直し→まとめ通知→週足RSI→MA200端末内計算
         // →4タブ化→★ブックマーク と8回の機能追加を経て 1.0 のままだったので実態へ。
-        versionCode = 17
-        versionName = "1.17"  // 2026-08-13: 売り時点灯（保有中の日本株・トレール-15%＋50日線割れ。SellRules）
+        versionCode = 18
+        versionName = "1.18"  // 2026-08-13: つるはしタブ＋新規候補通知（pickaxe-radar連携）
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
