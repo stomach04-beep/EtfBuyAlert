@@ -126,7 +126,7 @@ fun WatchListScreen(
                 // 種別チップは種別が混ざるタブ（発火中・★・急落優良）でのみ表示。
                 // 市場タブ（日本株/米国株/ETF）は絞り込み済みなので冗長になり消す。
                 val showKind = watchTab == Settings.TAB_FIRED || watchTab == Settings.TAB_BOOKMARK ||
-                        watchTab == Settings.TAB_RTX
+                        watchTab == Settings.TAB_RTX || watchTab == Settings.TAB_PICKAXE
 
                 if (shown.isEmpty()) {
                     Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
@@ -138,6 +138,7 @@ fun WatchListScreen(
                                 watchTab == Settings.TAB_FIRED -> "いま発火中（ライン到達）の銘柄はありません"
                                 watchTab == Settings.TAB_BOOKMARK -> "ブックマークした銘柄はありません\n（カード右上の★、またはNotionの「ブックマーク」列で登録できます）"
                                 watchTab == Settings.TAB_RTX -> "急落優良（イベント急落した優良大型株）の検知はいまありません\n（PC側の急落検知ジョブが自動で登録します。候補であり推奨ではありません）"
+                                watchTab == Settings.TAB_PICKAXE -> "つるはし候補（テーマ過熱×出遅れ）の検知はいまありません\n（PC側のつるはしレーダーが「本命が急騰したのに道具側が出遅れている」銘柄を自動で登録します。候補であり推奨ではありません）"
                                 else -> "この種別に該当する銘柄はありません"
                             },
                             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -176,6 +177,9 @@ private val TABS: List<WatchTab> = listOf(
     // 急落優良＝イベント急落した優良大型株（reversal-screener のRTX型検知が自動登録した行）。
     // ライン計算方式=RTX自動 が印。日本株・米国株が混ざるので種別チップも表示する。
     WatchTab(Settings.TAB_RTX, "急落優良") { it.lineMethod == AssetKind.METHOD_RTX },
+    // つるはし＝pickaxe-radar（テーマ過熱×出遅れ検知）が自動登録した候補行。
+    // ライン計算方式=つるはし が印。日本株・米国株が混ざるので種別チップも表示する。
+    WatchTab(Settings.TAB_PICKAXE, "つるはし") { it.lineMethod == AssetKind.METHOD_PICKAXE },
     WatchTab(Settings.TAB_JP, "日本株") { AssetKind.of(it) == AssetKind.Kind.JP_STOCK },
     WatchTab(Settings.TAB_US, "米国株") { AssetKind.of(it) == AssetKind.Kind.US_STOCK },
     WatchTab(Settings.TAB_ETF, "ETF") { AssetKind.of(it) == AssetKind.Kind.ETF },
@@ -199,6 +203,7 @@ private val METHOD_FILTERS: List<MethodFilter> = listOf(
     MethodFilter("adp", AssetKind.methodLabel(AssetKind.METHOD_ADP)) { it.lineMethod == AssetKind.METHOD_ADP },
     MethodFilter("manual", AssetKind.methodLabel(AssetKind.METHOD_MANUAL)) { it.lineMethod == AssetKind.METHOD_MANUAL },
     MethodFilter("ma200", AssetKind.methodLabel(AssetKind.METHOD_MA200)) { it.lineMethod == AssetKind.METHOD_MA200 },
+    MethodFilter("pickaxe", AssetKind.methodLabel(AssetKind.METHOD_PICKAXE)) { it.lineMethod == AssetKind.METHOD_PICKAXE },
     MethodFilter("rtx", AssetKind.methodLabel(AssetKind.METHOD_RTX)) { it.lineMethod == AssetKind.METHOD_RTX },
 )
 
