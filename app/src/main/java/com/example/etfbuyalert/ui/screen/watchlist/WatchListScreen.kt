@@ -479,6 +479,24 @@ private fun EtfCard(
                     color = rsiColor
                 )
             }
+            // 売り時監視（保有中の日本株個別株のみ。ルールと根拠は SellRules 参照）。
+            // アーム中＝「急騰した玉の売り時を見張っている」状態を1行で示し、
+            // 点灯中は警告色で強調する（通知を見逃してもカードで気づけるように）。
+            if (st.sellArmed && !st.sellExcluded && st.purchased) {
+                Spacer(Modifier.height(4.dp))
+                val fired = st.sellTrailFired || st.sellMa50Fired
+                val sellText = when {
+                    st.sellTrailFired -> String.format("🟠 売り時点灯：高値から%.1f%%下落（-15%%ルール）", -(st.sellDropPct ?: 0.0))
+                    st.sellMa50Fired -> "🟠 売り時点灯：50日線割れ"
+                    else -> String.format("売り監視中（高値から%.1f%%）", -(st.sellDropPct ?: 0.0))
+                }
+                Text(
+                    sellText,
+                    fontSize = 12.sp,
+                    fontWeight = if (fired) FontWeight.Bold else FontWeight.Normal,
+                    color = if (fired) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             // ニュース警告（PC側の照合ジョブがNotionへ書いた【要注意】材料。表示判定は NewsWarning が単一定義）
             // 発火していても「買ってはいけない発火」かもしれない印なので、警告色で目立たせる
             val newsText = NewsWarning.displayText(st.newsWarning)

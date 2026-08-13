@@ -62,6 +62,20 @@ data class EtfState(
     val weeklyRsiWeek: String? = null,   // RSIの基準週（最終確定バーの週初日 "yyyy-MM-dd"）
     val weeklyRsiAsOf: Long = 0L,        // RSIの最終計算成功時刻（失敗時は前回値キャッシュで継続）
 
+    // --- 売り時点灯（つるはし銘柄の売り時検証 2026-08-13。計算は domain.SellRules）---
+    // 対象＝保有中(purchased)の日本株個別株のみ。ETF・米国株は検証エビデンスが無いため対象外。
+    // 「売りルール除外」checkbox（Notion）がONの銘柄は監視しない（10倍株を狙って
+    // 持ち続けると決めた銘柄をルールから外すための逃し弁）。
+    val sellExcluded: Boolean = false,   // Notion「売りルール除外」列（trueなら監視しない）
+    val sellArmed: Boolean = false,      // 売り監視中（12M+100%かつ52週高値-5%以内になったことがある）
+    val sellArmDate: String? = null,     // アーム日（"yyyy-MM-dd"）
+    val sellPeak: Double? = null,        // アーム後の最高終値（トレールの基準）
+    val sellDropPct: Double? = null,     // 最高値からの下落率（％）
+    val sellMa50: Double? = null,        // 50日移動平均（直近確定バー時点）
+    val sellTrailFired: Boolean = false, // ① トレール-15% 点灯中（確定終値ベース）
+    val sellMa50Fired: Boolean = false,  // ② 50日線割れ 点灯中（確定終値ベース）
+    val sellAsOf: Long = 0L,             // 売り判定の最終計算成功時刻（失敗時は前回値で継続）
+
     // --- アラート重複防止フラグ（ラインを跨いだ瞬間だけ通知するため）---
     // true = 既にそのラインの通知を出した状態。ラインから外れたらfalseへ戻す。
     val dipArmed: Boolean = false,
@@ -71,6 +85,9 @@ data class EtfState(
     // 週足RSI過熱利確の通知済みフラグ（再armは「閾値-2を下回ったら」＝AlertEngine参照）
     val rsiTake1Armed: Boolean = false,  // 過熱利確①（RSI>75）
     val rsiTake2Armed: Boolean = false,  // 過熱利確②（RSI>80）
+    // 売り時点灯の通知済みフラグ（再armのヒステリシスは SellRules の定数参照）
+    val sellTrailArmed: Boolean = false, // 売り時①（トレール-15%）
+    val sellMa50Armed: Boolean = false,  // 売り時②（50日線割れ）
 
     // 前回のゾーン（ステージ変化通知の判定用。Zone.name を保存）
     val lastZone: String = ""
