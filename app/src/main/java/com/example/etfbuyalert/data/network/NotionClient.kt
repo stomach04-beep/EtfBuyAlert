@@ -34,6 +34,10 @@ object NotionClient {
     const val HEARTBEAT_TICKER = "_APP_HEARTBEAT"
     const val PROP_HEARTBEAT = "アプリ最終同期"
 
+    // つるはし出遅れ候補列（PC側 pickaxe-radar が毎日更新、アプリは読むだけ）。
+    // Python側の "出遅れ候補" と同じ列名。ズレると黙って常にfalseになるので定数化。
+    const val PROP_PICKAXE_LAGGING = "出遅れ候補"
+
     // 売りルール除外列（売り時点灯の対象から外す逃し弁）。列が未新設でもfalse扱いで安全。
     const val PROP_SELL_EXCLUDE = "売りルール除外"
 
@@ -59,7 +63,8 @@ object NotionClient {
         val rsiWatch: Boolean,  // 「RSI利確監視」checkbox列。列が未新設のDBではfalse扱い
         val bookmarked: Boolean, // 「ブックマーク」checkbox列。方針を定めた銘柄の印（★タブ）
         val newsWarning: String?, // 「ニュース警告」rich_text列。PC側ジョブが書く下落理由の警告文
-        val sellExcluded: Boolean // 「売りルール除外」checkbox列。ONなら売り時点灯の対象外
+        val sellExcluded: Boolean, // 「売りルール除外」checkbox列。ONなら売り時点灯の対象外
+        val pickaxeLagging: Boolean // 「出遅れ候補」checkbox列。pickaxe-radarが毎日更新（候補提示）
     )
 
     // 同期結果（成功/失敗とメッセージを呼び出し側へ返す）
@@ -311,6 +316,8 @@ object NotionClient {
                         rsiWatch = checkbox(props, "RSI利確監視"),
                         // ブックマーク（★）。PC側で方針を決めた銘柄にチェックを入れるとアプリの★タブに出る
                         bookmarked = checkbox(props, PROP_BOOKMARK),
+                        // つるはし出遅れ候補。列が未新設でもfalse＝候補なし扱い（安全側）
+                        pickaxeLagging = checkbox(props, PROP_PICKAXE_LAGGING),
                         // ニュース警告。列が未新設・空のDBでも空文字→nullになるだけ（クラッシュしない）
                         newsWarning = richText(props, PROP_NEWS_WARN).takeIf { it.isNotBlank() },
                         // 売りルール除外。列が未新設でもfalse＝監視対象のまま（安全側）
