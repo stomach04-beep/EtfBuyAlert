@@ -323,6 +323,8 @@ class EtfRepository(private val context: Context) {
                 bookmarked = n.bookmarked,
                 // ニュース警告はNotionが単一の真実の源（PC側ジョブが書き、アプリは読むだけ）
                 newsWarning = n.newsWarning,
+                // つるはし出遅れ候補もNotionが真実の源（pickaxe-radarが書き、アプリは読むだけ）
+                pickaxeLagging = n.pickaxeLagging,
                 weeklyRsi = prev?.weeklyRsi,
                 weeklyRsiWeek = prev?.weeklyRsiWeek,
                 weeklyRsiAsOf = prev?.weeklyRsiAsOf ?: 0L,
@@ -379,11 +381,36 @@ class EtfRepository(private val context: Context) {
                 it.lineMethod == AssetKind.METHOD_PICKAXE && it.pageId !in prevPickaxeIds
             }
             if (newPickaxe.isNotEmpty()) {
-                val body = newPickaxe.joinToString("\n") { "・${Symbol.label(it.name, it.ticker)}" } +
-                        "\nテーマ過熱×出遅れとして検知。候補であり買い推奨ではありません（つるはしタブ参照）"
+                // カタログ一括同期の直後は数十件まとめて増えるので、多いときは件数だけに要約する
+                // （100行の箇条書き通知は読めない。個別銘柄はつるはしタブで見れば足りる）
+                val body = if (newPickaxe.size > 10) {
+                    "つるはしタブに${newPickaxe.size}銘柄が追加されました（マスタ由来のカタログ）。" +
+                            "一覧はつるはしタブで確認してください"
+                } else {
+                    newPickaxe.joinToString("\n") { "・${Symbol.label(it.name, it.ticker)}" } +
+                            "\nつるはしマスタから追加。候補であり買い推奨ではありません（つるはしタブ参照）"
+                }
                 NotificationHelper.sendAlert(
                     context, "つるはし",
-                    "⛏ つるはし候補に新規 ${newPickaxe.size}件", body
+                    "⛏ つるはしに新規 ${newPickaxe.size}件", body
+                )
+            }
+
+            // 出遅れ候補の点灯（OFF→ON遷移だけ通知。pickaxe-radarがNotionのcheckboxを毎日更新）。
+            // 「テーマの本命が過熱しているのに、この道具株がまだ出遅れている」という候補提示。
+            // 買い側ルールは未検証なので文言は必ず「候補」に留める。
+            val prevLagging = data.etfStates
+                .filter { it.pickaxeLagging }.map { it.pageId }.toSet()
+            val newLagging = merged.filter {
+                it.lineMethod == AssetKind.METHOD_PICKAXE &&
+                        it.pickaxeLagging && it.pageId !in prevLagging
+            }
+            if (newLagging.isNotEmpty()) {
+                val body = newLagging.joinToString("\n") { "・${Symbol.label(it.name, it.ticker)}" } +
+                        "\nテーマ過熱×出遅れを検知。候補であり買い推奨ではありません（詳細はカードのメモ参照）"
+                NotificationHelper.sendAlert(
+                    context, "つるはし",
+                    "⛏ 出遅れ候補が点灯 ${newLagging.size}件", body
                 )
             }
         }

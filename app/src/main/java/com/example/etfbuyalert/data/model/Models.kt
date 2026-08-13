@@ -58,6 +58,12 @@ data class EtfState(
     // PC側（Claude）で方針を決めたときにNotionのチェックを入れれば、アプリの★タブに出る。
     // アプリで★を押した場合もNotionへ書き戻すので、値が2つに分裂しない。
     val bookmarked: Boolean = false,
+
+    // --- つるはし出遅れ候補（Notionの「出遅れ候補」checkbox。pickaxe-radarが毎日更新）---
+    // ON＝テーマの本命（金鉱）が過熱しているのにこの銘柄が出遅れている＝候補提示。
+    // 買い側ルールは未検証のため買い推奨ではない。アプリはOFF→ON遷移を通知し、
+    // つるはしタブで先頭に並べる。アプリは読むだけ（書かない）。
+    val pickaxeLagging: Boolean = false,
     val weeklyRsi: Double? = null,       // 週足RSI(14)。確定週の終値ベース（WeeklyRsiで計算）
     val weeklyRsiWeek: String? = null,   // RSIの基準週（最終確定バーの週初日 "yyyy-MM-dd"）
     val weeklyRsiAsOf: Long = 0L,        // RSIの最終計算成功時刻（失敗時は前回値キャッシュで継続）

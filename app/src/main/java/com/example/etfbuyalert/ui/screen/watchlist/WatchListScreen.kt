@@ -226,7 +226,12 @@ private fun filterAndSort(
     }
     return states.filter { tab.match(it) && method.match(it) }
         .sortedWith(
-            compareBy<EtfState> { AlertEngine.dipGapPercent(it) ?: Double.MAX_VALUE }
+            // つるはしタブは「出遅れ候補」を先頭に出す（数十銘柄のカタログの中で
+            // いま見るべき候補が埋もれないように）。他タブの並びは従来どおり
+            compareByDescending<EtfState> {
+                tabKey == Settings.TAB_PICKAXE && it.pickaxeLagging
+            }
+                .thenBy { AlertEngine.dipGapPercent(it) ?: Double.MAX_VALUE }
                 .thenBy { it.ticker }
         )
 }
@@ -399,6 +404,18 @@ private fun EtfCard(
                         if (showKind) {
                             Spacer(Modifier.width(6.dp))
                             KindChip(AssetKind.of(st))
+                        }
+                        // つるはし出遅れ候補のバッジ（pickaxe-radarの検知。候補提示であり買い推奨ではない）
+                        if (st.lineMethod == AssetKind.METHOD_PICKAXE && st.pickaxeLagging) {
+                            Spacer(Modifier.width(6.dp))
+                            Box(
+                                Modifier.clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFFE65100))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text("出遅れ", color = Color.White, fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                     Text(
