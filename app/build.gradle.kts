@@ -17,8 +17,9 @@ android {
         targetSdk = 36
         // 2026-07-29: グループ表示→月次ライン→判定見直し→まとめ通知→週足RSI→MA200端末内計算
         // →4タブ化→★ブックマーク と8回の機能追加を経て 1.0 のままだったので実態へ。
-        versionCode = 19
-        versionName = "1.19"  // 2026-08-14: つるはしタブのカタログ化（出遅れ候補バッジ・点灯通知・先頭ソート）
+        versionCode = 20
+        // 2026-08-15: 同じ通知の連発を修正（定期ジョブの再登録抑制・同期の二重実行ロック・同内容10分の重複抑止）
+        versionName = "1.20"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

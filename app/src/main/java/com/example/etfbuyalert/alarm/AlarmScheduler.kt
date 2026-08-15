@@ -43,8 +43,21 @@ object AlarmScheduler {
     }
 
     // 定期の価格チェック（PeriodicWork）。間隔は設定値（WorkManager下限15分）。
+    //
+    // 【重要】登録は「間隔が変わったときだけ UPDATE」にする。
+    // 以前は毎回 UPDATE で登録し直していたが、UPDATEは実行中のジョブを
+    // いったん中断（onStopJob）して再スケジュールするため、次の事故が起きた：
+    //   定期ジョブ発火 → アプリのプロセスが起動 → Application.onCreate と
+    //   CatchUpHelper が schedulePriceCheck を呼ぶ → 自分を起こしたジョブが中断・再実行
+    //   → update() は中断に応じない（通常メソッドなので処理は最後まで走り切る）ため
+    //     同じ同期が二重三重に走り、同じ通知が数秒差で何度も飛ぶ
+    // 実機ログでは workSpec の generation が 2818 まで進み、2026-08-15 20:56〜20:57 に
+    // つるはしの「出遅れ候補が点灯」通知が3回発行されていた。
+    // 間隔が同じなら KEEP＝既存の登録に一切触らない（実行中のジョブも中断しない）。
     fun schedulePriceCheck(context: Context) {
         val interval = Settings.intervalMin(context).toLong().coerceAtLeast(15L)
+        val alreadyScheduled = Settings.scheduledIntervalMin(context).toLong()
+        val changed = alreadyScheduled != interval   // 0（未登録）なら必ず登録される
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
@@ -52,10 +65,14 @@ object AlarmScheduler {
             .setConstraints(constraints)
             .setInputData(workDataOf(DataUpdateWorker.KEY_UPDATE_TYPE to UpdateType.PRICE_CHECK.name))
             .build()
-        // UPDATE: 間隔変更を反映させる（KEEPだと旧間隔のまま残る）
+        // 間隔変更時だけUPDATE（旧間隔のまま残るのを防ぐ）。
+        // 変わっていないときはKEEP＝登録済みなら何もしない・消えていれば作り直す。
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            PRICE_WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, req
+            PRICE_WORK_NAME,
+            if (changed) ExistingPeriodicWorkPolicy.UPDATE else ExistingPeriodicWorkPolicy.KEEP,
+            req
         )
+        if (changed) Settings.setScheduledIntervalMin(context, interval.toInt())
     }
 
     // 朝サマリの次回アラームを登録（過ぎていたら翌日）

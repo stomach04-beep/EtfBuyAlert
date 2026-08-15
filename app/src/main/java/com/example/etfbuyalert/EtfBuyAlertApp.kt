@@ -42,10 +42,13 @@ class EtfBuyAlertApp : Application() {
         val healthCheck = PeriodicWorkRequestBuilder<AlarmHealthWorker>(
             6, TimeUnit.HOURS
         ).build()
-        // UPDATE: 既存の24h周期を6hに差し替えるため（KEEPだと周期変更が反映されない）
+        // KEEP: 24h→6hへの周期変更（v1.13）はとうに全端末へ行き渡っているため、
+        // 毎プロセス起動ごとにUPDATEで登録し直す必要はない。
+        // UPDATEは実行中のジョブを中断→再スケジュールするので、
+        // 起動のたびに呼ぶと処理が二重に走る温床になる（v1.20で価格チェック側で実害を確認）。
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "bargain_alarm_health_check",
-            ExistingPeriodicWorkPolicy.UPDATE,
+            ExistingPeriodicWorkPolicy.KEEP,
             healthCheck
         )
     }
