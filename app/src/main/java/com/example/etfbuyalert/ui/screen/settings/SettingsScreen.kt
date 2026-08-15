@@ -1,6 +1,10 @@
 package com.example.etfbuyalert.ui.screen.settings
 
 import android.app.TimePickerDialog
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -19,6 +23,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.etfbuyalert.ui.theme.ThemePrefs
 
 // 設定タブ
@@ -119,6 +126,9 @@ fun SettingsScreen(
                 }
             }
 
+            // ===== 電池最適化の除外（時間どおりに動かすための必須設定）=====
+            BatteryOptimizationSection()
+
             // ===== 毎朝サマリ時刻 =====
             Section("毎朝サマリの時刻") {
                 Text("米国市場が閉じたあとの確認に。指定時刻に全監視ETFの終値と各ラインまでの距離を1通で通知します。",
@@ -195,6 +205,60 @@ fun SettingsScreen(
             },
             dismissButton = { TextButton(onClick = { showClearDialog = false }) { Text("キャンセル") } }
         )
+    }
+}
+
+/**
+ * 電池最適化の除外セクション。
+ *
+ * 除外していないと、Android の省電力（Doze）が価格チェックを何時間も後回しにする。
+ * 2026-08-16に実機ログで測ったところ最大13時間24分チェックが飛んでおり、
+ * 東京市場の立会時間が丸ごと抜けた日もあった（他の自作アプリは除外済みで定刻に動いていた）。
+ * 状態を毎回画面に出し、未除外ならその場でシステムのダイアログを出せるようにする。
+ */
+@Composable
+private fun BatteryOptimizationSection() {
+    val ctx = LocalContext.current
+    // 画面に戻ってきたとき（設定から帰還時）に状態を読み直すためのきっかけ
+    var refreshKey by remember { mutableIntStateOf(0) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refreshKey++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val exempted = remember(refreshKey) {
+        val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
+        pm.isIgnoringBatteryOptimizations(ctx.packageName)
+    }
+
+    Section("電池最適化の除外") {
+        if (exempted) {
+            Text("✅ 除外済みです。価格チェックが設定した間隔どおりに動きます。",
+                fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+        } else {
+            Text("⚠ 未除外です。このままでは端末の省電力機能が価格チェックを数時間後回しにし、" +
+                    "ライン到達の通知が遅れます（実測で最大13時間の空白）。",
+                fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+            Button(onClick = {
+                // 「制限しない」を選ぶダイアログを直接出す。端末が拒否したら設定一覧へ誘導
+                val direct = Intent(
+                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:${ctx.packageName}")
+                )
+                try {
+                    ctx.startActivity(direct)
+                } catch (e: Exception) {
+                    try {
+                        ctx.startActivity(
+                            Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        )
+                    } catch (_: Exception) { }
+                }
+            }) { Text("電池最適化から除外する") }
+        }
     }
 }
 
