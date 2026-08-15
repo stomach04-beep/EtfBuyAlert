@@ -29,7 +29,11 @@ object CatchUpHelper {
     private const val TAG = "CatchUpHelper"
 
     fun runCatchUp(context: Context) {
-        // 定期価格チェックが消えていないよう毎回登録（UPDATEなので重複しない）
+        // 価格チェックのアラーム（本命）と保険のPeriodicWorkが消えていないよう毎回登録し直す。
+        // アラームは端末の強制停止・アプリ更新・OEMの最適化で消えることがあり、
+        // 自己連鎖方式は1本消えるとそこで永久に止まるため、生存の受け皿が必要
+        // （アラーム設置は同じrequestCodeの上書きなので重複しない）。
+        try { AlarmScheduler.schedulePriceAlarm(context) } catch (_: Exception) {}
         try { AlarmScheduler.schedulePriceCheck(context) } catch (_: Exception) {}
 
         val now = Calendar.getInstance()

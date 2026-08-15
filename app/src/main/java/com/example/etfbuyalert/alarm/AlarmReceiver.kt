@@ -23,15 +23,17 @@ class AlarmReceiver : BroadcastReceiver() {
         val updateTypeStr = intent.getStringExtra(EXTRA_UPDATE_TYPE) ?: return
         val requestCode = intent.getIntExtra(EXTRA_REQUEST_CODE, -1)
 
-        // OneTimeWork でデータ取得を実行（ネットワーク必須）
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
-
+        // OneTimeWork でデータ取得を実行。
+        //
+        // 【ネットワーク制約を付けない】2026-08-16に実機で判明：Doze中のアプリでは
+        // 「ネットワーク接続」制約が満たされないと判定され、アラームが正確に鳴っても
+        // 仕事が数時間待たされる（08-15は07:00のアラームに対し実行が13:38＝6時間半遅れ）。
+        // このアラームは setExactAndAllowWhileIdle / setAlarmClock なので鳴った直後は
+        // 一時的に通信できる。通信できない回は前回値を維持して続行する設計なので、
+        // 「制約で待たせる」より「走って必要なら失敗を記録する」ほうが実害が小さい。
         val inputData = workDataOf(DataUpdateWorker.KEY_UPDATE_TYPE to updateTypeStr)
 
         val workRequest = OneTimeWorkRequestBuilder<DataUpdateWorker>()
-            .setConstraints(constraints)
             .setInputData(inputData)
             .build()
 
@@ -45,10 +47,16 @@ class AlarmReceiver : BroadcastReceiver() {
             workRequest
         )
 
-        // 次回のアラームを再スケジュール（翌日の同時刻）
-        val schedule = AlarmScheduler.findSchedule(context, requestCode)
-        if (schedule != null) {
-            AlarmScheduler.scheduleNext(context, schedule)
+        // 次回のアラームを再スケジュール（自己連鎖。これを忘れると1回で止まる）
+        //  - 朝サマリ: 翌日の同時刻
+        //  - 価格チェック: 設定間隔の次の区切り（毎時0分など）
+        if (updateTypeStr == UpdateType.PRICE_CHECK.name) {
+            AlarmScheduler.schedulePriceAlarm(context)
+        } else {
+            val schedule = AlarmScheduler.findSchedule(context, requestCode)
+            if (schedule != null) {
+                AlarmScheduler.scheduleNext(context, schedule)
+            }
         }
     }
 }

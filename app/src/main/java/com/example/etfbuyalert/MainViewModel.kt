@@ -204,7 +204,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setIntervalMin(v: Int) {
         Settings.prefs(getApplication()).edit().putInt(Settings.KEY_INTERVAL, v).apply()
         _intervalMin.value = v
-        AlarmScheduler.schedulePriceCheck(getApplication())  // 間隔変更を即反映
+        // 間隔変更を即反映（本命のアラームを張り替える。保険のPeriodicWorkは周期固定なので触らない）
+        AlarmScheduler.schedulePriceAlarm(getApplication())
     }
 
     fun setMorningTime(hour: Int, minute: Int) {
