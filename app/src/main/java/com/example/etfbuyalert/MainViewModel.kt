@@ -134,7 +134,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _isLoading.value = true
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                repo.update(UpdateType.PRICE_CHECK)
+                // waitIfBusy=true：裏で定期チェックが走っている最中に押されても、
+                // それが終わるのを待ってから自分の分を実行する（無反応に見せない）
+                repo.update(UpdateType.PRICE_CHECK, waitIfBusy = true)
             } finally {
                 val data = repo.load()
                 _etfStates.value = data.etfStates.sortedBy { it.ticker }

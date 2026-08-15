@@ -30,6 +30,10 @@ class DataUpdateWorker(
         }
 
         return try {
+            // waitIfBusy は付けない＝別の同期が走っている最中なら何もせず戻る。
+            // WorkManagerはジョブの再スケジュール時に走行中のWorkerを中断→再実行するが、
+            // update() の中身は中断に応じず最後まで走るため、待って実行すると
+            // 同じ同期が二重に走り同じ通知が連発する（v1.20で修正）。
             EtfRepository(applicationContext).update(updateType)
             Result.success()
         } catch (e: Exception) {

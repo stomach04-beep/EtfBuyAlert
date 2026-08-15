@@ -65,6 +65,17 @@ object Settings {
     const val DEFAULT_INTERVAL = 60
     fun intervalMin(ctx: Context): Int = prefs(ctx).getInt(KEY_INTERVAL, DEFAULT_INTERVAL)
 
+    // WorkManagerへ実際に登録した間隔（分）。ユーザー設定(KEY_INTERVAL)とは別物で、
+    // 「定期ジョブを登録し直す必要があるか」の判定にだけ使う内部値。
+    // 0＝まだ一度も登録していない（＝初回は必ず登録する）。
+    // これが無いと毎プロセス起動ごとにUPDATEで登録し直し、実行中のジョブを
+    // 中断→再実行させてしまい同じ通知が何回も飛ぶ（v1.20で修正した不具合）。
+    const val KEY_SCHEDULED_INTERVAL = "scheduled_interval_min"
+    fun scheduledIntervalMin(ctx: Context): Int = prefs(ctx).getInt(KEY_SCHEDULED_INTERVAL, 0)
+    fun setScheduledIntervalMin(ctx: Context, v: Int) {
+        prefs(ctx).edit().putInt(KEY_SCHEDULED_INTERVAL, v).apply()
+    }
+
     // --- 毎朝サマリの時刻 ---
     const val KEY_MORNING_HOUR = "morning_hour"
     const val KEY_MORNING_MIN = "morning_min"

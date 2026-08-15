@@ -29,6 +29,20 @@ class EtfRepository(private val context: Context) {
     private val storage = JsonStorage(context)
     private val TAG = "EtfRepository"
 
+    companion object {
+        // update() の二重実行を防ぐ鍵（VBAの「処理中フラグ」と同じ役割）。
+        // インスタンスではなく companion（プロセス全体で1つ）に置くのが要点で、
+        // Worker と ViewModel はそれぞれ別の EtfRepository を作るため、
+        // インスタンス変数だと鍵の意味がない。
+        //
+        // なぜ必要か（2026-08-15の不具合）:
+        // update() は「前回の状態」を読んでから通知を出し、最後に保存する。
+        // 同じ処理が重なって走ると、どちらも保存前の古い状態を読むので
+        // 同じ「新規」「点灯」を見つけて同じ通知を全員が出してしまう
+        // （実機で同一通知3連発。保存も後勝ちで先の更新ログが消えていた）。
+        private val updateLock = java.util.concurrent.locks.ReentrantLock()
+    }
+
     // MA200ラインの再計算間隔。PC版は4週ごとの月次ジョブで、200日線は1日ではほぼ動かない。
     // 毎回1年ぶんの日足を全銘柄ぶん取りに行くと通信も電池も無駄なので7日に1回までとする。
     private val MA_LINES_REFRESH_MS = 7L * 24 * 60 * 60 * 1000
@@ -68,9 +82,32 @@ class EtfRepository(private val context: Context) {
         return next
     }
 
-    // 価格チェック1回ぶんを実行（type=MORNING_SUMMARYなら朝サマリも送る）。
-    // 同期失敗時も前回値（キャッシュ）で価格判定を続ける。
-    fun update(type: UpdateType): Boolean {
+    /**
+     * 価格チェック1回ぶんを実行（type=MORNING_SUMMARYなら朝サマリも送る）。
+     * 同期失敗時も前回値（キャッシュ）で価格判定を続ける。
+     *
+     * 二重実行はここで止める（同じ通知の連発防止。updateLock のコメント参照）。
+     * @param waitIfBusy 実行中の同期があるとき待つか。
+     *   手動更新（画面の更新ボタン）は true＝待って結果を返す（押しても無反応を避ける）。
+     *   バックグラウンドのWorkerは false＝待たずに諦める（重複通知を出さないのが目的で、
+     *   次の定期実行で拾えるため取りこぼしにはならない）。
+     */
+    fun update(type: UpdateType, waitIfBusy: Boolean = false): Boolean {
+        if (waitIfBusy) {
+            updateLock.lock()
+        } else if (!updateLock.tryLock()) {
+            Log.w(TAG, "別の同期が実行中のためスキップ（type=$type）")
+            return true   // 異常ではないので失敗扱いにしない（更新ログも汚さない）
+        }
+        return try {
+            runUpdate(type)
+        } finally {
+            updateLock.unlock()
+        }
+    }
+
+    // 同期1回ぶんの本体。呼び出しは必ず update() 経由（鍵を取ってから入る）。
+    private fun runUpdate(type: UpdateType): Boolean {
         val data = storage.load()
 
         // このチェックで出たアラートを一旦ためて、最後にまとめて1件の通知にする

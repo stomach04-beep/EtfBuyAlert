@@ -29,6 +29,13 @@ object NotificationHelper {
     private const val MAX_HISTORY = 100
     private val historyLock = Any()
 
+    // 同じ内容の通知を短時間に繰り返さないための窓（分）。
+    // 二重実行そのものは EtfRepository.updateLock で止めているが、
+    // 「同期が途中で落ちて保存されず、次の実行が同じ新規を見つけ直す」経路が残るため、
+    // 出口にも保険を置く（実機で同一通知3連発を確認したのがこの通知群）。
+    // 価格チェックの最短間隔15分より短くして、正当な再通知を潰さない。
+    private const val DEDUPE_WINDOW_MIN = 10
+
     // 通知チャンネルを作成
     fun createNotificationChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -48,6 +55,8 @@ object NotificationHelper {
 
     // 買い時/損切り/順張りアラートを1件送信
     fun sendAlert(context: Context, category: String, title: String, message: String) {
+        // 直前に同じ内容を出していたら鳴らさない（重複通知の保険）
+        if (isRecentDuplicate(context, category, title, message)) return
         // ticker+category で安定した通知ID（銘柄ごと・種別ごとに別通知）
         val notifyId = 10000 + abs((title + category).hashCode() % 80000)
         notifyNow(context, CHANNEL_ALERT, title, message, notifyId, category,
@@ -58,7 +67,9 @@ object NotificationHelper {
     // 1つの価格チェックで複数銘柄が同時にライン到達すると通知が何件も飛んでくるため、
     // 2件以上なら「まとめ通知1件」に集約する（1件だけなら従来どおり個別通知）。
     // 履歴タブでは銘柄別に見たいので、履歴には各件を個別に残す。
-    fun sendAlerts(context: Context, items: List<AlertItem>) {
+    fun sendAlerts(context: Context, alerts: List<AlertItem>) {
+        // 直前に同じ内容を出したものは落とす（重複通知の保険。isRecentDuplicate参照）
+        val items = alerts.filterNot { isRecentDuplicate(context, it.category, it.title, it.message) }
         if (items.isEmpty()) return
 
         // 履歴は1件ずつ追記（通知はまとめても履歴は銘柄別に残す）
@@ -87,6 +98,8 @@ object NotificationHelper {
 
     // 毎朝サマリを送信
     fun sendMorningSummary(context: Context, title: String, message: String) {
+        // 同じサマリを短時間に二度出さない（重複通知の保険）
+        if (isRecentDuplicate(context, "朝サマリ", title, message)) return
         notifyNow(context, CHANNEL_SUMMARY, title, message, 7001, "朝サマリ",
             NotificationCompat.PRIORITY_DEFAULT)
     }
@@ -170,6 +183,26 @@ object NotificationHelper {
                 file.writeText(gson.toJson(list))
             } catch (e: Exception) { e.printStackTrace() }
         }
+    }
+
+    /**
+     * 「同じ通知をつい今さっき出したか」を履歴で判定する（重複通知の最終防波堤）。
+     * 種別・タイトル・本文が完全に一致し、かつ DEDUPE_WINDOW_MIN 分以内なら true。
+     * 履歴は date("yyyy-MM-dd") + time("HH:mm") の分単位なので、判定も分単位で足りる。
+     */
+    private fun isRecentDuplicate(
+        context: Context, category: String, title: String, message: String
+    ): Boolean {
+        val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.JAPAN)
+        val now = System.currentTimeMillis()
+        // 先頭が最新なので、窓の外に出たところで打ち切る（100件を毎回全部見ない）
+        for (log in loadHistory(context)) {
+            val at = try { fmt.parse("${log.date} ${log.time}")?.time ?: continue }
+                     catch (e: Exception) { continue }
+            if (now - at > DEDUPE_WINDOW_MIN * 60_000L) return false
+            if (log.category == category && log.title == title && log.message == message) return true
+        }
+        return false
     }
 
     // 履歴を読み込む（履歴タブ用）
