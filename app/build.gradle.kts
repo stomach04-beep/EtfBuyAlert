@@ -17,10 +17,12 @@ android {
         targetSdk = 36
         // 2026-07-29: グループ表示→月次ライン→判定見直し→まとめ通知→週足RSI→MA200端末内計算
         // →4タブ化→★ブックマーク と8回の機能追加を経て 1.0 のままだったので実態へ。
-        versionCode = 21
+        versionCode = 22
         // 2026-08-16: 価格チェックの遅延（最大13時間の空白）を修正
         // ＝アラーム自己連鎖へ移行・ネットワーク制約の撤去・電池最適化除外の導線を設定画面へ
-        versionName = "1.21"
+        // 2026-08-20 v1.22: 履歴の頑健化（分配金調整済みを優先・偽の値飛びを除去）。
+        // 売り時判定とNotionへ書き戻すMA200線の土台なので汚染がPC側へ伝播していた
+        versionName = "1.22"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
