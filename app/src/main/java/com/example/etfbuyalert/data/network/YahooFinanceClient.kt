@@ -112,6 +112,15 @@ object YahooFinanceClient {
         return null
     }
 
+    /**
+     * chart APIの履歴から (タイムスタンプ, 終値) を取り出す。
+     * 【重要】分配金・配当の権利落ちは生の終値だと「下落」として52週高値との差や
+     * トレール判定に混入する（Be Greedy側の実測では1306の年1回2%の分配落ちで
+     * -15%ラインが約2%早く発火した）。そこで分配金調整済みの adjclose を優先し、
+     * 無い場合だけ生の close にフォールバックする。
+     * この履歴は売り時判定とMA200線（Notionへ書き戻す）の両方の土台なので、
+     * ここが汚れるとPC側のジョブまで汚染が伝播する。
+     */
     private fun parseHistory(json: String): List<com.example.etfbuyalert.data.model.ChartPoint>? {
         try {
             val root = JsonParser.parseString(json).asJsonObject
@@ -119,21 +128,56 @@ object YahooFinanceClient {
             if (result.size() == 0) return null
             val obj = result[0].asJsonObject
             val ts = obj.getAsJsonArray("timestamp") ?: return null
-            val closes = obj.getAsJsonObject("indicators")
-                ?.getAsJsonArray("quote")?.get(0)?.asJsonObject
-                ?.getAsJsonArray("close") ?: return null
+            val indicators = obj.getAsJsonObject("indicators") ?: return null
+            // 分配金調整済みを優先。無ければ生の終値
+            val closes = indicators.getAsJsonArray("adjclose")
+                ?.takeIf { it.size() > 0 }?.get(0)?.asJsonObject
+                ?.getAsJsonArray("adjclose")
+                ?: indicators.getAsJsonArray("quote")?.get(0)?.asJsonObject
+                    ?.getAsJsonArray("close")
+                ?: return null
             val points = ArrayList<com.example.etfbuyalert.data.model.ChartPoint>(ts.size())
             val n = minOf(ts.size(), closes.size())
             for (i in 0 until n) {
                 val c = closes[i]
                 if (c.isJsonNull) continue  // 欠損日はスキップ
-                points.add(com.example.etfbuyalert.data.model.ChartPoint(ts[i].asLong, c.asDouble))
+                val v = c.asDouble
+                if (v.isNaN() || v <= 0.0) continue  // 0や負は値ではなく欠損
+                points.add(com.example.etfbuyalert.data.model.ChartPoint(ts[i].asLong, v))
             }
-            return if (points.isEmpty()) null else points
+            val cleaned = dropBadTicks(points)
+            return if (cleaned.isEmpty()) null else cleaned
         } catch (e: Exception) {
             Log.e(TAG, "履歴パース例外: ${e.message}")
             return null
         }
+    }
+
+    /**
+     * バッドティック（偽の値飛び）を除去する。
+     * Yahooの日本株データには日付を誤った分割レコード由来の異常値が実在する
+     * （1306の2026-03-30/31だけ価格が1/10スケール＝偽の-90%と+948%を実測）。
+     * この履歴は週足なので1週の変動は最大でも±25%程度。それを超えて飛んだ
+     * 週は捨てる。放置すると偽の高値・安値が売り時判定とMA200線を狂わせる。
+     * 【注意】本物の株式分割も同じ形で飛ぶが、その場合は調整済みの値が
+     * 使われるので飛ばない（飛ぶのは調整漏れ＝誤プリントのほう）
+     */
+    private fun dropBadTicks(
+        rows: List<com.example.etfbuyalert.data.model.ChartPoint>
+    ): List<com.example.etfbuyalert.data.model.ChartPoint> {
+        val out = ArrayList<com.example.etfbuyalert.data.model.ChartPoint>(rows.size)
+        var last = Double.NaN
+        var dropped = 0
+        for (r in rows) {
+            if (!last.isNaN() && kotlin.math.abs(r.close / last - 1.0) > 0.35) {
+                dropped++
+                continue
+            }
+            out.add(r)
+            last = r.close
+        }
+        if (dropped > 0) Log.w(TAG, "履歴の異常値を${dropped}件除外した")
+        return out
     }
 
     // YahooのJSONから必要な値だけ取り出す
