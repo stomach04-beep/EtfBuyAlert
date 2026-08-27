@@ -410,7 +410,7 @@ class EtfRepository(private val context: Context) {
             // つるはし候補の新規追加も同じ流儀で1回だけ通知する。
             // pickaxe-radar（PC側ジョブ）が「テーマの本命が急騰したのに道具側が
             // 出遅れている」銘柄をNotionへ登録した行（ライン計算方式=つるはし）に気づくための通知。
-            // 買い側ルールは未検証なので文言は必ず「候補」に留める（検証済みなのは売り側だけ）。
+            // 買い側ルールは検証70(2026-08-27)で棄却。文言は必ず「候補」に留める（有効なのは売り側だけ）。
             val prevPickaxeIds = data.etfStates
                 .filter { it.lineMethod == AssetKind.METHOD_PICKAXE }
                 .map { it.pageId }.toSet()
@@ -435,7 +435,7 @@ class EtfRepository(private val context: Context) {
 
             // 出遅れ候補の点灯（OFF→ON遷移だけ通知。pickaxe-radarがNotionのcheckboxを毎日更新）。
             // 「テーマの本命が過熱しているのに、この道具株がまだ出遅れている」という候補提示。
-            // 買い側ルールは未検証なので文言は必ず「候補」に留める。
+            // 買い側ルールは検証70(2026-08-27)で棄却。文言は必ず「候補」に留める。
             val prevLagging = data.etfStates
                 .filter { it.pickaxeLagging }.map { it.pageId }.toSet()
             val newLagging = merged.filter {
