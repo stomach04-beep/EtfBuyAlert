@@ -61,7 +61,7 @@ data class EtfState(
 
     // --- つるはし出遅れ候補（Notionの「出遅れ候補」checkbox。pickaxe-radarが毎日更新）---
     // ON＝テーマの本命（金鉱）が過熱しているのにこの銘柄が出遅れている＝候補提示。
-    // 買い側ルールは未検証のため買い推奨ではない。アプリはOFF→ON遷移を通知し、
+    // 買い側ルールは検証70(2026-08-27)で棄却されたため買い推奨ではない。アプリはOFF→ON遷移を通知し、
     // つるはしタブで先頭に並べる。アプリは読むだけ（書かない）。
     val pickaxeLagging: Boolean = false,
     val weeklyRsi: Double? = null,       // 週足RSI(14)。確定週の終値ベース（WeeklyRsiで計算）
