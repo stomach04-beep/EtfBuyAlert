@@ -11,13 +11,15 @@ import com.example.etfbuyalert.data.network.YahooFinanceClient
 import com.example.etfbuyalert.domain.AlertEngine
 import com.example.etfbuyalert.domain.AssetKind
 import com.example.etfbuyalert.domain.EtfCategory
-import com.example.etfbuyalert.domain.Freshness
-import com.example.etfbuyalert.domain.Money
+import com.example.etfbuyalert.domain.HealthCheck
+import com.example.etfbuyalert.domain.MarketHours
 import com.example.etfbuyalert.domain.Symbol
 import com.example.etfbuyalert.domain.Ma200Lines
+import com.example.etfbuyalert.domain.MorningSummary
 import com.example.etfbuyalert.domain.NewsWarning
 import com.example.etfbuyalert.domain.SellRules
 import com.example.etfbuyalert.domain.WeeklyRsi
+import com.example.etfbuyalert.widget.EtfWidgetProvider
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -51,6 +53,9 @@ class EtfRepository(private val context: Context) {
     // 大引け（15:10）をまたいだ最初のチェックで当日終値を拾えるよう6時間とする
     // （対象は保有中の日本株個別株のみ＝件数が少なく通信負荷は小さい）。
     private val SELL_REFRESH_MS = 6L * 60 * 60 * 1000
+
+    // 健全性チェック通知の間隔（週1回）。毎回鳴らすと無視される習慣がつくため。
+    private val HEALTH_NOTIFY_INTERVAL_MS = 7L * 24 * 60 * 60 * 1000
 
     fun load(): AppData = storage.load()
 
@@ -91,8 +96,11 @@ class EtfRepository(private val context: Context) {
      *   手動更新（画面の更新ボタン）は true＝待って結果を返す（押しても無反応を避ける）。
      *   バックグラウンドのWorkerは false＝待たずに諦める（重複通知を出さないのが目的で、
      *   次の定期実行で拾えるため取りこぼしにはならない）。
+     * @param force 閉場中スキップ（MarketHours）を無視して必ず取りに行くか。
+     *   画面の更新ボタンは true＝「押したのに何も変わらない」を避ける。
+     *   定期実行は false＝閉じている市場に190銘柄ぶんの無駄うちをしない。
      */
-    fun update(type: UpdateType, waitIfBusy: Boolean = false): Boolean {
+    fun update(type: UpdateType, waitIfBusy: Boolean = false, force: Boolean = false): Boolean {
         if (waitIfBusy) {
             updateLock.lock()
         } else if (!updateLock.tryLock()) {
@@ -100,14 +108,14 @@ class EtfRepository(private val context: Context) {
             return true   // 異常ではないので失敗扱いにしない（更新ログも汚さない）
         }
         return try {
-            runUpdate(type)
+            runUpdate(type, force)
         } finally {
             updateLock.unlock()
         }
     }
 
     // 同期1回ぶんの本体。呼び出しは必ず update() 経由（鍵を取ってから入る）。
-    private fun runUpdate(type: UpdateType): Boolean {
+    private fun runUpdate(type: UpdateType, force: Boolean = false): Boolean {
         val data = storage.load()
 
         // このチェックで出たアラートを一旦ためて、最後にまとめて1件の通知にする
@@ -126,9 +134,34 @@ class EtfRepository(private val context: Context) {
             zoneChange = Settings.notifyZoneChange(context)
         )
         val now = System.currentTimeMillis()
+        // 閉場中スキップの判定（市場ごとに1回だけ決める。判定は MarketHours が単一の真実の源）。
+        // 立会時間外は前回と同じ終値を取り直すだけなので、190銘柄ぶんの通信と電池が丸ごと無駄になる。
+        // ただし「その日のクロージング（終値）取得が未実施」なら閉場中でも1回だけ取りに行く。
+        // 手動更新(force)のときは無視して必ず取りに行く（押しても何も変わらないのを避ける）。
+        val nowJst = java.time.ZonedDateTime.now(MarketHours.JST)
+        val jpPlan = MarketHours.decide(true, nowJst, data.jpClosingFetchedOn)
+        val usPlan = MarketHours.decide(false, nowJst, data.usClosingFetchedOn)
+        Log.i(TAG, "取得計画 日本株=${jpPlan.fetch}(${jpPlan.reason}) " +
+                "米国株=${usPlan.fetch}(${usPlan.reason}) force=$force")
+
         val updated = ArrayList<EtfState>(data.etfStates.size)
-        var fetchOkCount = 0  // 価格取得に成功した銘柄数（0件なら失敗としてログに残す）
+        var fetchOkCount = 0    // 価格取得に成功した銘柄数（0件なら失敗としてログに残す）
+        var attemptCount = 0    // 実際に取りに行った銘柄数（全部スキップの回を失敗と誤記録しないため）
+        var skipCount = 0
         for (st in data.etfStates) {
+            val plan = if (Symbol.isJp(st.ticker)) jpPlan else usPlan
+            if (!force && !plan.fetch) {
+                // 閉場中：通信は一切せず、前回値のまま判定だけ通す（ゾーン記録の連続性を保つ）。
+                // 価格が変わらないので新たなライン到達は起きない＝誤通知にはならない。
+                skipCount++
+                val (kept, keptAlerts) = AlertEngine.evaluate(st, toggles, now)
+                for (a in keptAlerts) {
+                    pending.add(NotificationHelper.AlertItem(a.category, a.title, a.message, st.ticker))
+                }
+                updated.add(kept)
+                continue
+            }
+            attemptCount++
             val quote = YahooFinanceClient.fetchQuote(st.ticker)
             var s = if (quote != null) {
                 fetchOkCount++
@@ -165,12 +198,21 @@ class EtfRepository(private val context: Context) {
             val (newState, alerts) = AlertEngine.evaluate(s, toggles, now)
             s = newState
             for (a in alerts) {
-                pending.add(NotificationHelper.AlertItem(a.category, a.title, a.message))
+                // ティッカーを添える＝1件通知をタップしたとき詳細画面へ直行できる（F2）
+                pending.add(NotificationHelper.AlertItem(a.category, a.title, a.message, s.ticker))
             }
             updated.add(s)
         }
         data.etfStates.clear()
         data.etfStates.addAll(updated)
+
+        // クロージング（終値）取得を済ませた印。次の閉場中の回はここを見てスキップする。
+        // 取得に1件も成功していない回は「済んだ」ことにしない（通信断で空振りした回を
+        // 済み扱いにすると、その日の終値を永久に取り逃がす）。
+        if (fetchOkCount > 0) {
+            if (jpPlan.isClosingRun) data.jpClosingFetchedOn = jpPlan.sessionKey
+            if (usPlan.isClosingRun) data.usClosingFetchedOn = usPlan.sessionKey
+        }
 
         // ためたアラートをまとめて送信（2件以上は1件のまとめ通知に集約）
         NotificationHelper.sendAlerts(context, pending)
@@ -180,16 +222,25 @@ class EtfRepository(private val context: Context) {
             sendMorningSummary(data)
         }
 
-        // 4) ログ記録＋保存
-        // 監視銘柄があるのに価格が1件も取れなかったら「失敗」として記録する
-        // （成功と偽ると、更新ログから取得経路の故障に気づけないため）
-        val fetchOk = data.etfStates.isEmpty() || fetchOkCount > 0
+        // 4) 監視設定の健全性チェック（週1回まで通知。バナーは設定画面が同じ判定で常時表示）
+        notifyHealthIfNeeded(data)
+
+        // 5) ログ記録＋保存
+        // 取りに行ったのに1件も取れなかったら「失敗」として記録する
+        // （成功と偽ると、更新ログから取得経路の故障に気づけないため）。
+        // 全銘柄が閉場中スキップだった回（attemptCount=0）は失敗ではない。
+        val fetchOk = attemptCount == 0 || fetchOkCount > 0
         val logMessage = buildList {
-            if (!fetchOk) add("価格取得0件（全${data.etfStates.size}銘柄失敗）")
+            if (!fetchOk) add("価格取得0件（試行${attemptCount}銘柄すべて失敗）")
+            if (skipCount > 0) add("閉場中スキップ${skipCount}銘柄")
             if (!data.lastSyncOk && data.lastSyncError != null) add("Notion同期失敗")
         }.joinToString(" / ")
         appendLog(data, type, success = fetchOk, message = logMessage)
         storage.save(data)
+
+        // 6) ホーム画面ウィジェットを描き直す（保存の後＝必ず最新のJSONを読む）。
+        // ウィジェット側の失敗で同期を落とさないよう、例外はProvider内で握りつぶしている。
+        EtfWidgetProvider.refresh(context)
         return fetchOk
     }
 
@@ -216,12 +267,13 @@ class EtfRepository(private val context: Context) {
     private fun refreshMa200Lines(st: EtfState, now: Long): EtfState {
         if (st.lineMethod != Ma200Lines.METHOD) return st          // 担当外の行は一切触らない
         val elapsed = now - st.maLinesAsOf
-        if (st.maLinesAsOf > 0L && elapsed < MA_LINES_REFRESH_MS) return st
+        // 再計算の間隔内。ただし前回「書き戻しだけ」失敗した分が残っていればここで再試行する
+        if (st.maLinesAsOf > 0L && elapsed < MA_LINES_REFRESH_MS) return retryLineWriteBack(st)
 
-        val hist = YahooFinanceClient.fetchHistory(st.ticker, "1y") ?: return st
+        val hist = YahooFinanceClient.fetchHistory(st.ticker, "1y") ?: return retryLineWriteBack(st)
         val lines = Ma200Lines.compute(hist) ?: run {
             Log.w(TAG, "${st.ticker}: MA200ライン計算に必要なデータが不足（既存ラインを維持）")
-            return st
+            return retryLineWriteBack(st)
         }
         if (lines.isSubstituteWindow) {
             // 上場が浅い等で200日ぶん無い場合。黙って代用せずログに残す（PC版と同じ方針）
@@ -230,19 +282,16 @@ class EtfRepository(private val context: Context) {
 
         // Notionへ書き戻す。これをしないとNotion側の数値がPCの最終書き込み時点で凍結し、
         // 「アプリは新しい値・Notionは古い値」で同じラインが2つ存在することになる。
-        // 書き戻しに失敗しても通知はローカル計算値で動くので、処理は続行する。
-        val token = Settings.notionToken(context)
-        val wroteBack = NotionClient.updateLines(
-            token = token,
-            pageId = st.pageId,
-            dip = lines.dip,
-            deepDip = lines.deepDip,
-            breakout = lines.breakout,
-            stopLoss = lines.stopLoss,
+        // 書き戻しに失敗しても通知はローカル計算値で動くので、処理そのものは続行する。
+        //
+        // 【計算と書き戻しの成否を分ける（v1.23）】
+        // 以前は書き戻しの成否にかかわらず maLinesAsOf=now としていたため、通信エラーで
+        // 書き戻しに失敗すると次の再計算まで7日間そのまま凍結し、Notion側だけが古い値で
+        // 放置されていた（Notionを読むPC側ジョブへ古い値が伝播する）。
+        // 計算値はそのまま採用しつつ maLinesDirty=true を立て、書き戻しだけを次回同期で再試行する。
+        val wroteBack = writeLinesToNotion(
+            st.pageId, st.ticker, lines.dip, lines.deepDip, lines.breakout, lines.stopLoss
         )
-        if (!wroteBack) {
-            Log.w(TAG, "${st.ticker}: Notionへのライン書き戻しに失敗（アプリ内の値は更新済み）")
-        }
 
         return st.copy(
             dipPrice = lines.dip,
@@ -251,7 +300,47 @@ class EtfRepository(private val context: Context) {
             stopLossPrice = lines.stopLoss,
             maLinesAsOf = now,
             maWindowUsed = lines.maWindowUsed,
+            maLinesDirty = !wroteBack,
         )
+    }
+
+    /**
+     * 前回「書き戻しだけ」失敗して残っている行について、計算済みの値をそのままNotionへ送り直す。
+     * 日足の再取得も再計算もしない（通信は書き戻し1回だけ）ので毎回の同期で試しても軽い。
+     * 成功したら印を下ろし、まだ失敗するなら印を残して次回また試す。
+     */
+    private fun retryLineWriteBack(st: EtfState): EtfState {
+        if (!st.maLinesDirty) return st
+        val dip = st.dipPrice
+        val deep = st.deepDipPrice
+        val breakout = st.breakoutPrice
+        val stop = st.stopLossPrice
+        if (dip == null || deep == null || breakout == null || stop == null) {
+            // 送るべき値が揃っていない（データ全消去後など）。無限に試しても意味がないので印を下ろす
+            return st.copy(maLinesDirty = false)
+        }
+        val ok = writeLinesToNotion(st.pageId, st.ticker, dip, deep, breakout, stop)
+        if (ok) Log.i(TAG, "${st.ticker}: 保留していたライン書き戻しに成功")
+        return st.copy(maLinesDirty = !ok)
+    }
+
+    /** Notionへのライン書き戻し1回ぶん（成功なら true）。呼び出し口をここ1か所に集約する。 */
+    private fun writeLinesToNotion(
+        pageId: String, ticker: String,
+        dip: Double, deepDip: Double, breakout: Double, stopLoss: Double,
+    ): Boolean {
+        val ok = NotionClient.updateLines(
+            token = Settings.notionToken(context),
+            pageId = pageId,
+            dip = dip,
+            deepDip = deepDip,
+            breakout = breakout,
+            stopLoss = stopLoss,
+        )
+        if (!ok) {
+            Log.w(TAG, "$ticker: Notionへのライン書き戻しに失敗（アプリ内の値は更新済み・次回同期で再試行）")
+        }
+        return ok
     }
 
     /**
@@ -347,6 +436,8 @@ class EtfRepository(private val context: Context) {
                 stopLossPrice = keepLocal(n.lineMethod, prev) { prev?.stopLossPrice } ?: n.stopLossPrice,
                 maLinesAsOf = if (n.lineMethod == Ma200Lines.METHOD) prev?.maLinesAsOf ?: 0L else 0L,
                 maWindowUsed = if (n.lineMethod == Ma200Lines.METHOD) prev?.maWindowUsed ?: 0 else 0,
+                // 書き戻し保留の印も引き継ぐ（ここで落とすと再試行の機会ごと消える）
+                maLinesDirty = n.lineMethod == Ma200Lines.METHOD && (prev?.maLinesDirty ?: false),
                 purchased = n.purchased,
                 price = prev?.price,
                 previousClose = prev?.previousClose,
@@ -469,6 +560,8 @@ class EtfRepository(private val context: Context) {
                     category = "ニュース警告",
                     // Notionの銘柄名に既にティッカーが入っている行があるため Symbol.label で二重表示を防ぐ
                     title = "⚠ ${Symbol.label(m.name, m.ticker)}に警告",
+                    // 1件だけならタップでこの銘柄の詳細画面へ直行する（F2）
+                    ticker = m.ticker,
                     message = "発火中ですが一時的な下落と言い切れない材料があります。\n" +
                             "$sig\nラインに触れただけで買わず、内容を確認してください。"
                 ))
@@ -482,37 +575,44 @@ class EtfRepository(private val context: Context) {
         data.lastSyncAt = System.currentTimeMillis()
     }
 
-    // 毎朝サマリ通知を組み立てて送信
-    private fun sendMorningSummary(data: AppData) {
-        if (data.etfStates.isEmpty()) return
-        val now = System.currentTimeMillis()
-        val sb = StringBuilder()
-        for (st in data.etfStates.sortedBy { it.ticker }) {
-            // 鮮度ガード：7日超の古い価格は「現在値」として出さず、取得失敗を明示する
-            if (Freshness.isInvalid(st.asOf, now)) {
-                sb.append("• ${st.ticker}  ${Freshness.INVALID_TEXT}\n")
-                continue
-            }
-            val zone = AlertEngine.currentZone(st, now)
-            val price = st.price
-            // 3日超は「（◯日前の値）」を添えて、最新値と誤解させない
-            val staleNote = Freshness.staleSuffix(st.asOf, now)
-            sb.append("• ${st.ticker}  ${Money.format(st.ticker, price)}$staleNote  ［${zone.label}］\n")
-            val parts = mutableListOf<String>()
-            if (st.dipPrice != null) parts.add("押し目${Money.format(st.ticker, st.dipPrice)}${gap(price, st.dipPrice)}")
-            if (st.stopLossPrice != null) parts.add("損切り${Money.format(st.ticker, st.stopLossPrice)}")
-            if (st.breakoutPrice != null) parts.add("順張り${Money.format(st.ticker, st.breakoutPrice)}")
-            if (parts.isNotEmpty()) sb.append("   ").append(parts.joinToString(" / ")).append("\n")
+    /**
+     * 監視設定の健全性チェック（F1）。
+     *
+     * 「保有中なのに損切りラインが空」「ラインが1本も無い」＝その銘柄だけ静かに
+     * 監視されていない状態を、週1回だけ通知で知らせる（設定画面のバナーは常時表示）。
+     * 毎回鳴らすと無視される習慣がつくので、通知は7日に1回まで（SilenceWatchと同じ考え方）。
+     * 問題が解消したら、次に問題が起きたときはすぐ鳴るよう記録を消す。
+     */
+    private fun notifyHealthIfNeeded(data: AppData) {
+        val report = HealthCheck.inspect(data.etfStates)
+        val prefs = Settings.prefs(context)
+        if (!report.hasIssue) {
+            // 直っているのに「前に鳴らした」記録が残っていると、再発時に最大7日鳴らない
+            prefs.edit().remove(Settings.KEY_HEALTH_NOTIFIED_AT).apply()
+            return
         }
-        val title = "☀ ETF朝サマリ（${data.etfStates.size}銘柄）"
-        NotificationHelper.sendMorningSummary(context, title, sb.toString().trimEnd())
+        val now = System.currentTimeMillis()
+        val last = prefs.getLong(Settings.KEY_HEALTH_NOTIFIED_AT, 0L)
+        if (last > 0L && now - last < HEALTH_NOTIFY_INTERVAL_MS) return   // 週1回ガード
+        val message = HealthCheck.message(report) ?: return
+        prefs.edit().putLong(Settings.KEY_HEALTH_NOTIFIED_AT, now).apply()
+        NotificationHelper.sendHealthWarning(
+            context,
+            "⚙ 監視設定に抜けがあります（${report.total}件）",
+            message
+        )
     }
 
-    // 現在値からラインまでの乖離率（マイナス＝そこまで下げ余地）
-    private fun gap(price: Double?, line: Double?): String {
-        if (price == null || line == null || price == 0.0) return ""
-        val pct = (line - price) / price * 100.0
-        return String.format("(%+.1f%%)", pct)
+    /**
+     * 毎朝サマリ通知を組み立てて送信する。
+     *
+     * 本文の組み立ては純関数 MorningSummary（テスト対象）に集約し、ここでは送るだけ。
+     * 全銘柄を流し込む旧方式は、監視が約190銘柄になったことで通知の5,120字上限に切られ、
+     * ティッカーが若い先頭しか読めなくなっていた（v1.23で要約形式へ変更）。
+     */
+    private fun sendMorningSummary(data: AppData) {
+        val summary = MorningSummary.build(data.etfStates, System.currentTimeMillis()) ?: return
+        NotificationHelper.sendMorningSummary(context, summary.title, summary.body)
     }
 
     // 更新ログを追記（直近50件だけ残す）

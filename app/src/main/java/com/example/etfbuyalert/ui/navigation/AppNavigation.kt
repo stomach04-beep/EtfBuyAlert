@@ -28,8 +28,17 @@ sealed class BottomNavItem(val route: String, val label: String, val icon: Image
     data object Settings : BottomNavItem("settings", "設定", Icons.Default.Settings)
 }
 
+/**
+ * @param openTicker          通知タップで開くよう指定された銘柄（無ければ null）。
+ *                            1銘柄ぶんの通知は「その銘柄の話」なので詳細画面へ直行させる（F2）。
+ * @param onOpenTickerHandled 遷移し終わったら呼ぶ（同じ指定で二度飛ばないようにする）
+ */
 @Composable
-fun AppNavigation(viewModel: MainViewModel) {
+fun AppNavigation(
+    viewModel: MainViewModel,
+    openTicker: String? = null,
+    onOpenTickerHandled: () -> Unit = {},
+) {
     val navController = rememberNavController()
     val items = listOf(BottomNavItem.Watch, BottomNavItem.History, BottomNavItem.Settings)
     val startRoute = BottomNavItem.Watch.route
@@ -158,6 +167,9 @@ fun AppNavigation(viewModel: MainViewModel) {
                     notifyBreakout = notifyBreakout,
                     notifyMorning = notifyMorning,
                     notifyZoneChange = notifyZoneChange,
+                    // 健全性チェックのバナー（F1）は監視中の実データから毎回求める。
+                    // 数値を別に保存すると画面と実データがズレるので、状態そのものを渡す
+                    etfStates = etfStates,
                     onNotionTokenChange = { viewModel.setNotionToken(it) },
                     onNotionDbChange = { viewModel.setNotionDb(it) },
                     onIntervalChange = { viewModel.setIntervalMin(it) },
@@ -170,6 +182,20 @@ fun AppNavigation(viewModel: MainViewModel) {
                     onTestNotification = { viewModel.sendTestNotification() },
                     onClearData = { viewModel.clearAllData() }
                 )
+            }
+        }
+
+        // 通知から渡された銘柄の詳細画面へ飛ぶ（F2）。
+        // NavHostより後に置くこと：NavHostが画面定義を登録する前に navigate すると落ちる。
+        // 銘柄が一覧に無い（初回同期前・削除済み）ときは飛ばさずトップのままにする
+        // （空の詳細画面を出しても何も分からないため）。
+        LaunchedEffect(openTicker) {
+            val t = openTicker ?: return@LaunchedEffect
+            onOpenTickerHandled()
+            if (etfStates.any { it.ticker == t }) {
+                try {
+                    navController.navigate("detail/$t") { launchSingleTop = true }
+                } catch (_: Exception) { }
             }
         }
     }

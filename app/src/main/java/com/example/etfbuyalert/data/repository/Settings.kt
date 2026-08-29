@@ -95,4 +95,10 @@ object Settings {
     fun notifyBreakout(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_NOTIFY_BREAKOUT, true)
     fun notifyMorning(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_NOTIFY_MORNING, true)
     fun notifyZoneChange(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_NOTIFY_ZONE, true)
+
+    // --- 監視設定の健全性チェック（F1）---
+    // 「保有中なのに損切りラインが空」「ラインが1本も無い」＝その銘柄だけ静かに監視されない
+    // 状態を週1回だけ通知する（設定画面のバナーは常時表示）。ここは最後に通知した時刻だけを持つ。
+    // 判定結果そのものは保存しない（保存すると画面の値と実データがズレる。毎回statesから求める）。
+    const val KEY_HEALTH_NOTIFIED_AT = "health_notified_at"
 }

@@ -3,4 +3,6 @@
          「ETF」を外した名前にしている。パッケージ名(com.example.etfbuyalert)は互換のため据え置き。
          変えると別アプリ扱いになり、通知履歴・設定・通知済みフラグが全部消えるため。 -->
     <string name="app_name">買い時アラート</string>
+    <!-- ウィジェット選択画面に出る説明文 -->
+    <string name="widget_description">発火中の件数と、押し目が近い上位3銘柄を表示します</string>
 </resources>

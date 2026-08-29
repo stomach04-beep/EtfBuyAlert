@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.etfbuyalert.data.model.EtfState
+import com.example.etfbuyalert.domain.HealthCheck
 import com.example.etfbuyalert.ui.theme.ThemePrefs
 
 // 設定タブ
@@ -42,6 +44,9 @@ fun SettingsScreen(
     notifyBreakout: Boolean,
     notifyMorning: Boolean,
     notifyZoneChange: Boolean,
+    // 監視中の全銘柄。健全性チェック（F1）のバナーをここから毎回計算する。
+    // 件数を別に保存すると画面と実データがズレるので、状態そのものを受け取る（DRY）
+    etfStates: List<EtfState>,
     onNotionTokenChange: (String) -> Unit,
     onNotionDbChange: (String) -> Unit,
     onIntervalChange: (Int) -> Unit,
@@ -70,6 +75,11 @@ fun SettingsScreen(
             Modifier.fillMaxSize().padding(pad).verticalScroll(scroll).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            // ===== 監視設定の健全性チェック（F1）=====
+            // 「保有中なのに損切りラインが空」「ラインが1本も無い」＝その銘柄だけ
+            // 静かに監視されない状態を、設定を開いたときに必ず目に入る位置で知らせる
+            HealthBanner(etfStates)
+
             // ===== Notion連携 =====
             Section("Notion連携") {
                 Text(
@@ -205,6 +215,48 @@ fun SettingsScreen(
             },
             dismissButton = { TextButton(onClick = { showClearDialog = false }) { Text("キャンセル") } }
         )
+    }
+}
+
+/**
+ * 監視設定の健全性バナー（F1）。
+ *
+ * 判定・文言とも domain.HealthCheck が単一の真実の源で、週1回の通知と同じ結果を出す
+ * （画面とお知らせで数が食い違うと、どちらが本当か分からなくなる）。
+ * 問題が無いときは1行だけ出す＝「チェックが動いている」ことも見えるようにする。
+ */
+@Composable
+private fun HealthBanner(states: List<EtfState>) {
+    // 監視が0件のとき（初回・全消去後）は判定材料が無いので何も出さない
+    if (states.isEmpty()) return
+    val report = remember(states) { HealthCheck.inspect(states) }
+    if (!report.hasIssue) {
+        Text(
+            "✅ 監視設定の抜けはありません（${states.size}銘柄を点検）",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.primary
+        )
+        return
+    }
+    val message = HealthCheck.message(report) ?: return
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                "⚠ 監視設定に抜けがあります（${report.total}件）",
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Text(
+                message,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+        }
     }
 }
 
