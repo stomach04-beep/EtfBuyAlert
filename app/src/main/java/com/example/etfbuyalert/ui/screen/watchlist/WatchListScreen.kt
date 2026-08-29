@@ -8,13 +8,19 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,6 +37,7 @@ import com.example.etfbuyalert.domain.Freshness
 import com.example.etfbuyalert.domain.Money
 import com.example.etfbuyalert.domain.NewsWarning
 import com.example.etfbuyalert.domain.Symbol
+import com.example.etfbuyalert.domain.WatchRanking
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -107,31 +114,56 @@ fun WatchListScreen(
             if (etfStates.isEmpty()) {
                 EmptyState()
             } else {
-                // 種別タブ（発火中 / ★ / 日本株 / 米国株 / ETF）。件数付きの本物のタブ表示。
-                WatchTabSelector(etfStates, watchTab, onWatchTabChange)
+                // ティッカー／銘柄名のインクリメンタル検索（約190銘柄あり、
+                // 目的の銘柄がどのタブにいるかを覚えていられないため）。
+                // 入力中はタブの絞り込みを無視して全銘柄から探す＝探し物が必ず見つかる。
+                var query by rememberSaveable { mutableStateOf("") }
+                val searching = query.isNotBlank()
+                SearchField(query, onChange = { query = it })
                 Spacer(Modifier.height(8.dp))
 
-                // 発火中タブのときだけ、ライン方式でさらに絞り込めるようにする。
-                // 「ADP型の発火」と「RTX自動の発火」は意味がまるで違うので分けて見られる必要がある。
-                if (watchTab == Settings.TAB_FIRED) {
-                    val firedStates = remember(etfStates) { etfStates.filter { AlertEngine.isFired(it) } }
-                    FiredMethodFilterRow(firedStates, firedMethod, onFiredMethodChange)
+                // 種別タブ（発火中 / ★ / 日本株 / 米国株 / ETF）。件数付きの本物のタブ表示。
+                // 検索中はタブで切らないので、迷わせないようタブ自体を隠す。
+                if (!searching) {
+                    WatchTabSelector(etfStates, watchTab, onWatchTabChange)
                     Spacer(Modifier.height(8.dp))
+
+                    // 発火中タブのときだけ、ライン方式でさらに絞り込めるようにする。
+                    // 「ADP型の発火」と「RTX自動の発火」は意味がまるで違うので分けて見られる必要がある。
+                    if (watchTab == Settings.TAB_FIRED) {
+                        val firedStates = remember(etfStates) { etfStates.filter { AlertEngine.isFired(it) } }
+                        FiredMethodFilterRow(firedStates, firedMethod, onFiredMethodChange)
+                        Spacer(Modifier.height(8.dp))
+                    }
                 }
 
-                // 絞り込み＋「押し目まであと何%」の近い順に並べる（発火中が先頭に来る）
-                val shown = remember(etfStates, watchTab, firedMethod) {
-                    filterAndSort(etfStates, watchTab, firedMethod)
+                // 絞り込み＋「押し目まであと何%」の近い順に並べる（発火中が先頭に来る）。
+                // 検索中は全銘柄が対象（絞り込み・並べ替えとも WatchRanking に集約）
+                val shown = remember(etfStates, watchTab, firedMethod, query) {
+                    if (searching) WatchRanking.search(etfStates, query)
+                    else filterAndSort(etfStates, watchTab, firedMethod)
+                }
+                if (searching) {
+                    Text(
+                        "「$query」に一致 ${shown.size}件（タブを無視して全銘柄から検索中）",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
                 }
                 // 種別チップは種別が混ざるタブ（発火中・★・急落優良）でのみ表示。
                 // 市場タブ（日本株/米国株/ETF）は絞り込み済みなので冗長になり消す。
-                val showKind = watchTab == Settings.TAB_FIRED || watchTab == Settings.TAB_BOOKMARK ||
+                // 検索中は日本株・米国株・ETFが混ざるので必ず出す。
+                val showKind = searching || watchTab == Settings.TAB_FIRED ||
+                        watchTab == Settings.TAB_BOOKMARK ||
                         watchTab == Settings.TAB_RTX || watchTab == Settings.TAB_PICKAXE
 
                 if (shown.isEmpty()) {
                     Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
                         Text(
                             when {
+                                // 検索して0件のときは「タブのせいではない」ことを明示する
+                                searching -> "「$query」に一致する銘柄はありません\n（ティッカー・銘柄名の一部で探せます）"
                                 // 方式で絞った結果0件なのか、そもそも発火が無いのかを区別して伝える
                                 watchTab == Settings.TAB_FIRED && firedMethod != Settings.FIRED_METHOD_ALL ->
                                     "この方式で発火中の銘柄はありません\n（「すべて」に戻すと他の方式の発火が見られます）"
@@ -160,6 +192,30 @@ fun WatchListScreen(
             }
         }
     }
+}
+
+/**
+ * ティッカー／銘柄名のインクリメンタル検索欄（1文字打つごとに絞り込む）。
+ * 判定そのものは WatchRanking.matchesQuery が持ち主で、ここは入力欄だけを持つ。
+ */
+@Composable
+private fun SearchField(query: String, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onChange,
+        singleLine = true,
+        placeholder = { Text("ティッカー・銘柄名で検索", fontSize = 13.sp) },
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "検索") },
+        trailingIcon = {
+            // 入力中だけ「消す」を出す（常時出ていると押せる場所と誤解される）
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onChange("") }) {
+                    Icon(Icons.Default.Close, contentDescription = "検索条件を消す")
+                }
+            }
+        },
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 // タブの定義（キー・表示名・その銘柄が該当するかの判定）を1か所にまとめる。
@@ -228,11 +284,11 @@ private fun filterAndSort(
         .sortedWith(
             // つるはしタブは「出遅れ候補」を先頭に出す（数十銘柄のカタログの中で
             // いま見るべき候補が埋もれないように）。他タブの並びは従来どおり
+            // 「押し目まであと何%」の近い順＝WatchRanking が単一の真実の源
+            // （ホーム画面ウィジェットの上位3件も同じ並びを使う。UIと二重定義しない）
             compareByDescending<EtfState> {
                 tabKey == Settings.TAB_PICKAXE && it.pickaxeLagging
-            }
-                .thenBy { AlertEngine.dipGapPercent(it) ?: Double.MAX_VALUE }
-                .thenBy { it.ticker }
+            }.then(WatchRanking.dipGapComparator())
         )
 }
 

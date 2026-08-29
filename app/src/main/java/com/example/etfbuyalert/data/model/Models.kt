@@ -35,6 +35,12 @@ data class EtfState(
     // ラインが古いまま止まっていた。アプリが自分で計算するようになった目印。
     val maLinesAsOf: Long = 0L,          // 端末内でラインを計算した時刻(epochミリ秒)。0＝未計算(=Notionの値)
     val maWindowUsed: Int = 0,           // 実際に使った移動平均日数。200未満なら上場が浅く代用したという意味
+    // 計算は成功したがNotionへの書き戻しに失敗した状態（true＝Notion側だけ古い）。
+    // 計算の成否と書き戻しの成否を分けて持つための印で、true の間は
+    // 再計算の7日ガードとは無関係に、次の同期で「書き戻しだけ」を再試行する。
+    // これが無いと maLinesAsOf=now で7日凍結され、Notionが7日間古いまま放置され、
+    // Notionを読むPC側ジョブへ古い値が伝播する（v1.23で分離）。
+    val maLinesDirty: Boolean = false,
 
     // --- 直近の価格（Yahoo Financeから取得）---
     val price: Double? = null,           // 現在値（市場が閉じていれば直近終値）
@@ -134,5 +140,10 @@ data class AppData(
     val updateLogs: MutableList<UpdateLog> = mutableListOf(),
     var lastSyncAt: Long = 0L,           // 最後にNotion同期に成功した時刻
     var lastSyncOk: Boolean = false,     // 直近の同期が成功したか
-    var lastSyncError: String? = null    // 同期失敗時のメッセージ（バナー表示用）
+    var lastSyncError: String? = null,   // 同期失敗時のメッセージ（バナー表示用）
+    // --- 閉場中スキップの記録（判定は domain.MarketHours。"yyyy-MM-dd"）---
+    // その立会日のクロージング（終値）取得を済ませたか。済んでいれば閉場中は取りに行かない。
+    // 逆に未実施なら閉場中でも1回だけ取りに行く＝アラームを逃した日も終値を必ず拾う。
+    var jpClosingFetchedOn: String? = null,   // 日本株（16時台に取得）
+    var usClosingFetchedOn: String? = null    // 米国株（JST 7時台に取得）
 )

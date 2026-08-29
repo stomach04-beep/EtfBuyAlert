@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ホーム画面ウィジェット（2x2）。
+     【RemoteViewsの制約】使えるクラスは限られており <View> やカスタムViewは使えない
+     （置くとクラッシュログも出ないまま真っ白になる）。区切り線は TextView + background で作る。
+     文字色は widget_bg.xml の暗い背景に合わせている。片方だけ変えると読めなくなるので対で直すこと。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_bg"
+    android:padding="10dp">
+
+    <!-- 発火中の件数（0件かどうかがひと目で分かる一番大事な行） -->
+    <TextView
+        android:id="@+id/widget_fired"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:textColor="#FFB74D"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:text="発火中 —" />
+
+    <!-- 区切り線（<View>が使えないためTextViewの背景で代用） -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="6dp"
+        android:background="#37474F"
+        android:text="" />
+
+    <!-- 押し目が近い上位3銘柄 -->
+    <TextView
+        android:id="@+id/widget_row1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="13sp"
+        android:textColor="#ECEFF1"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:text="" />
+
+    <TextView
+        android:id="@+id/widget_row2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:textSize="13sp"
+        android:textColor="#ECEFF1"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:text="" />
+
+    <TextView
+        android:id="@+id/widget_row3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:textSize="13sp"
+        android:textColor="#ECEFF1"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:text="" />
+
+    <!-- 最終更新（いつの値を見ているのかを必ず添える） -->
+    <TextView
+        android:id="@+id/widget_updated"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textSize="11sp"
+        android:textColor="#90A4AE"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:text="" />
+
+</LinearLayout>

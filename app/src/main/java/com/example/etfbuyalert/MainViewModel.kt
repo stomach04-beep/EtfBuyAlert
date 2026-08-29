@@ -136,7 +136,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 // waitIfBusy=true：裏で定期チェックが走っている最中に押されても、
                 // それが終わるのを待ってから自分の分を実行する（無反応に見せない）
-                repo.update(UpdateType.PRICE_CHECK, waitIfBusy = true)
+                // force=true：閉場中スキップを無視して必ず取りに行く
+                //（自分で押した更新が「市場が閉じているので何もしません」では納得できない）
+                repo.update(UpdateType.PRICE_CHECK, waitIfBusy = true, force = true)
             } finally {
                 val data = repo.load()
                 _etfStates.value = data.etfStates.sortedBy { it.ticker }

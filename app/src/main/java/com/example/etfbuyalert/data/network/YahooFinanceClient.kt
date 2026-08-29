@@ -66,8 +66,9 @@ object YahooFinanceClient {
 
     // 日足/週足の履歴（チャート用）を取得。range例: "3mo" / "6mo" / "1y" / "5y" / "max"。失敗時null。
     fun fetchHistory(ticker: String, range: String): List<com.example.etfbuyalert.data.model.ChartPoint>? {
+        val interval = intervalFor(range)
         val url = "https://query1.finance.yahoo.com/v8/finance/chart/" +
-            ticker + "?interval=" + intervalFor(range) + "&range=" + range
+            ticker + "?interval=" + interval + "&range=" + range
         repeat(3) { attempt ->
             try {
                 val req = Request.Builder()
@@ -77,7 +78,8 @@ object YahooFinanceClient {
                 client.newCall(req).execute().use { resp ->
                     if (!resp.isSuccessful) return@use
                     val body = resp.body?.string() ?: return@use
-                    return parseHistory(body)
+                    // 足種で異常値判定の閾値が変わる（日足は狭め・週足は広め＝BadTicks参照）
+                    return parseHistory(body, isWeekly = interval == "1wk")
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "$ticker 履歴取得失敗(${attempt + 1}/3): ${e.message}")
@@ -102,7 +104,8 @@ object YahooFinanceClient {
                 client.newCall(req).execute().use { resp ->
                     if (!resp.isSuccessful) return@use
                     val body = resp.body?.string() ?: return@use
-                    return parseHistory(body)
+                    // この経路は interval=1wk 固定なので必ず週足の閾値を使う
+                    return parseHistory(body, isWeekly = true)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "$ticker 週足取得失敗(${attempt + 1}/3): ${e.message}")
@@ -120,8 +123,13 @@ object YahooFinanceClient {
      * 無い場合だけ生の close にフォールバックする。
      * この履歴は売り時判定とMA200線（Notionへ書き戻す）の両方の土台なので、
      * ここが汚れるとPC側のジョブまで汚染が伝播する。
+     *
+     * @param isWeekly 週足なら true（異常値判定の閾値が足種で変わる＝BadTicks参照）
      */
-    private fun parseHistory(json: String): List<com.example.etfbuyalert.data.model.ChartPoint>? {
+    private fun parseHistory(
+        json: String,
+        isWeekly: Boolean,
+    ): List<com.example.etfbuyalert.data.model.ChartPoint>? {
         try {
             val root = JsonParser.parseString(json).asJsonObject
             val result = root.getAsJsonObject("chart")?.getAsJsonArray("result") ?: return null
@@ -145,39 +153,20 @@ object YahooFinanceClient {
                 if (v.isNaN() || v <= 0.0) continue  // 0や負は値ではなく欠損
                 points.add(com.example.etfbuyalert.data.model.ChartPoint(ts[i].asLong, v))
             }
-            val cleaned = dropBadTicks(points)
-            return if (cleaned.isEmpty()) null else cleaned
+            // 異常値の除去は純関数 BadTicks に集約（テスト対象。ここでは呼ぶだけ）。
+            // 旧実装は「捨てた点で比較基準を更新しない」ため、本物の水準シフト以降の
+            // 全バーが連鎖的に捨てられ履歴が黙って打ち切られていた（v1.23で修正）。
+            val cleaned = com.example.etfbuyalert.domain.BadTicks.clean(
+                points, com.example.etfbuyalert.domain.BadTicks.thresholdFor(isWeekly)
+            )
+            if (cleaned.dropped > 0) {
+                Log.w(TAG, "履歴の異常値を${cleaned.dropped}件除外した（${if (isWeekly) "週足" else "日足"}）")
+            }
+            return if (cleaned.points.isEmpty()) null else cleaned.points
         } catch (e: Exception) {
             Log.e(TAG, "履歴パース例外: ${e.message}")
             return null
         }
-    }
-
-    /**
-     * バッドティック（偽の値飛び）を除去する。
-     * Yahooの日本株データには日付を誤った分割レコード由来の異常値が実在する
-     * （1306の2026-03-30/31だけ価格が1/10スケール＝偽の-90%と+948%を実測）。
-     * この履歴は週足なので1週の変動は最大でも±25%程度。それを超えて飛んだ
-     * 週は捨てる。放置すると偽の高値・安値が売り時判定とMA200線を狂わせる。
-     * 【注意】本物の株式分割も同じ形で飛ぶが、その場合は調整済みの値が
-     * 使われるので飛ばない（飛ぶのは調整漏れ＝誤プリントのほう）
-     */
-    private fun dropBadTicks(
-        rows: List<com.example.etfbuyalert.data.model.ChartPoint>
-    ): List<com.example.etfbuyalert.data.model.ChartPoint> {
-        val out = ArrayList<com.example.etfbuyalert.data.model.ChartPoint>(rows.size)
-        var last = Double.NaN
-        var dropped = 0
-        for (r in rows) {
-            if (!last.isNaN() && kotlin.math.abs(r.close / last - 1.0) > 0.35) {
-                dropped++
-                continue
-            }
-            out.add(r)
-            last = r.close
-        }
-        if (dropped > 0) Log.w(TAG, "履歴の異常値を${dropped}件除外した")
-        return out
     }
 
     // YahooのJSONから必要な値だけ取り出す

@@ -41,6 +41,18 @@ class MainActivity : ComponentActivity() {
     // onResumeでバックグラウンド更新されたデータを読み直すために保持
     private var viewModel: MainViewModel? = null
 
+    // 通知タップで開くよう指定された銘柄（正規形ティッカー）。
+    // Composeの状態にしておくと、アプリを開いたまま別の通知を踏んだとき（onNewIntent）も
+    // その場で画面が切り替わる。開いたら null へ戻す＝画面回転で二度開かない。
+    private var pendingTicker by mutableStateOf<String?>(null)
+
+    // 既にアプリが起動している状態で通知を踏んだ場合はこちらに届く
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingTicker = intent.getStringExtra(NotificationHelper.EXTRA_TICKER)
+    }
+
     override fun onResume() {
         super.onResume()
         // バックグラウンドWorkerがJSONを書き換えているため、
@@ -87,6 +99,9 @@ class MainActivity : ComponentActivity() {
         val viewModel = ViewModelProvider(this)[MainViewModel::class.java]
         this.viewModel = viewModel
 
+        // 通知（1銘柄ぶん）から起動された場合、その銘柄の詳細画面へ直行する（F2）
+        pendingTicker = intent?.getStringExtra(NotificationHelper.EXTRA_TICKER)
+
         // バックグラウンドWorkerの完了を監視し、アプリ表示中でも画面へ自動反映する。
         // WorkerはViewModelと別のRepositoryインスタンスでJSONを書くため、これがないと
         // 16:00定刻更新などがウィジェットだけ反映され、開きっぱなしの画面は古いままになる
@@ -119,7 +134,12 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    AppNavigation(viewModel)
+                    AppNavigation(
+                        viewModel = viewModel,
+                        // 通知から指定された銘柄。表示し終えたら消す（戻る操作で再度飛ばない）
+                        openTicker = pendingTicker,
+                        onOpenTickerHandled = { pendingTicker = null },
+                    )
                 }
             }
         }

@@ -21,9 +21,24 @@ object NotificationHelper {
     private const val CHANNEL_ALERT = "etf_alert"     // 押し目・深押し・損切り・順張り（重要）
     private const val CHANNEL_SUMMARY = "etf_summary"  // 毎朝サマリ（通常）
     private const val BUNDLE_ID = 8001                 // まとめ通知の固定ID（次のまとめで置き換え）
+    // 監視設定の健全性チェック（週1回）。既存IDと衝突しない番号を使う
+    // （8001=まとめ / 7001=朝サマリ / 9999=テスト / 10000〜=個別 / 99001=沈黙監視）
+    private const val HEALTH_ID = 8101
 
-    // まとめ通知用の1件ぶんのアラート（domainに依存しないよう単純な入れ物）
-    data class AlertItem(val category: String, val title: String, val message: String)
+    /**
+     * 通知タップで開く銘柄のティッカー（正規形）を載せるIntent extra。
+     * 1件だけの通知は「その銘柄の話」なので、トップではなく詳細画面へ直行させる。
+     */
+    const val EXTRA_TICKER = "open_ticker"
+
+    // まとめ通知用の1件ぶんのアラート（domainに依存しないよう単純な入れ物）。
+    // ticker は通知タップの遷移先を決めるためだけに持つ（表示には使わない）。
+    data class AlertItem(
+        val category: String,
+        val title: String,
+        val message: String,
+        val ticker: String? = null,
+    )
 
     private const val HISTORY_FILE = "notification_history.json"
     private const val MAX_HISTORY = 100
@@ -76,11 +91,12 @@ object NotificationHelper {
         for (it in items) appendHistory(context, it.category, it.title, it.message)
 
         if (items.size == 1) {
-            // 1件だけなら従来どおり個別通知（ticker+categoryごとの安定ID）
+            // 1件だけなら従来どおり個別通知（ticker+categoryごとの安定ID）。
+            // その通知は1銘柄の話なので、タップでその銘柄の詳細画面へ直行させる（F2）。
             val it = items[0]
             val notifyId = 10000 + abs((it.title + it.category).hashCode() % 80000)
             postNotification(context, CHANNEL_ALERT, it.title, it.message, notifyId,
-                NotificationCompat.PRIORITY_HIGH)
+                NotificationCompat.PRIORITY_HIGH, ticker = it.ticker)
             return
         }
 
@@ -120,6 +136,18 @@ object NotificationHelper {
         postNotification(context, channel, title, message, notifyId, priority)
     }
 
+    /**
+     * 監視設定の健全性チェック（F1）の警告を送る。週1回までのガードは呼び出し側（EtfRepository）。
+     *
+     * 沈黙監視と同じく record=false で出す：この警告は「アプリが動いている証拠」ではあるが、
+     * これで沈黙時計をリセットすると、価格の通知が止まっていることを隠してしまうため。
+     */
+    fun sendHealthWarning(context: Context, title: String, message: String) {
+        appendHistory(context, "設定チェック", title, message)
+        postNotification(context, CHANNEL_SUMMARY, title, message, HEALTH_ID,
+            NotificationCompat.PRIORITY_DEFAULT, record = false)
+    }
+
     // 沈黙監視の警告を送る。
     // 別ID・記録なしで出す：警告自身が「最後に鳴った日」を更新すると
     // 沈黙時計がリセットされ、経過日数の表示が狂うため。
@@ -139,13 +167,18 @@ object NotificationHelper {
     // 買い時ライン到達は14日以上無いのが普通なので、アラートだけを記録対象にすると誤報になる。
     private fun postNotification(
         context: Context, channel: String, title: String, message: String,
-        notifyId: Int, priority: Int, record: Boolean = true
+        notifyId: Int, priority: Int, record: Boolean = true, ticker: String? = null
     ) {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            // 1銘柄の通知はタップでその銘柄の詳細画面へ直行させる（受け取りは MainActivity）
+            if (!ticker.isNullOrBlank()) putExtra(EXTRA_TICKER, ticker)
         }
+        // FLAG_UPDATE_CURRENT が要る：同じ requestCode の PendingIntent が残っていると、
+        // 付け替えたはずの extra（＝開く銘柄）が古いまま再利用され、別銘柄の画面が開く。
         val pendingIntent = PendingIntent.getActivity(
-            context, notifyId, intent, PendingIntent.FLAG_IMMUTABLE
+            context, notifyId, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_stat_buy_ladder)
