@@ -95,7 +95,9 @@ class EtfWidgetProvider : AppWidgetProvider() {
 
             val now = System.currentTimeMillis()
             val fired = WatchRanking.firedCount(states)
-            views.setTextViewText(R.id.widget_fired, "発火中 ${fired}件 / ${states.size}銘柄")
+            // 2列幅（最小サイズ）だと「発火中 23件 / 190銘柄」は末尾が省略されて
+            // 肝心の母数が消える。数字だけの短い形にして、狭い幅でも意味が落ちないようにする。
+            views.setTextViewText(R.id.widget_fired, "発火中 ${fired} / ${states.size}")
 
             // 押し目が近い上位3件（距離を出せない銘柄は最初から除外される＝WatchRanking）
             val top = WatchRanking.topByDipGap(states, TOP_N, now)
