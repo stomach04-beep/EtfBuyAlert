@@ -27,10 +27,13 @@ class AlarmHealthWorker(
             // 沈黙監視：通知（毎朝サマリ含む＝生存信号）が14日途絶えたら知らせる。
             // このWorkerはAlarmManagerと別経路（WorkManager）なので、
             // アラーム側が死んでサマリが止まった場合でも警告を出せる（SilenceWatch.kt 参照）
-            SilenceWatch.buildWarningIfSilent(applicationContext)?.let { msg ->
-                NotificationHelper.sendSilenceWarning(
+            // 記録しない版で文を受け取り、通知を出せたときだけ「警告済み」を記録する
+            // （出せないのに記録すると、次の警告まで SILENT_DAYS 日黙ってしまう）
+            SilenceWatch.peekWarningIfSilent(applicationContext)?.let { msg ->
+                val posted = NotificationHelper.sendSilenceWarning(
                     applicationContext, "しばらく通知が出ていません", msg
                 )
+                if (posted) SilenceWatch.markWarned(applicationContext)
             }
             Result.success()
         } catch (e: Exception) {
