@@ -62,6 +62,17 @@ object SilenceWatch {
      * 入れたばかりのアプリがいきなり鳴らないよう、初回起動時刻を起点に数える。
      */
     fun buildWarningIfSilent(context: Context): String? {
+        // 互換用: 文があればその場で「警告済み」を記録する（通知できたか確かめたいときは peek＋markWarned を使う）
+        val msg = peekWarningIfSilent(context) ?: return null
+        markWarned(context)
+        return msg
+    }
+
+    /**
+     * 黙りすぎていれば警告文を返すが、「警告済み」は記録しない版。
+     * 通知が本当に出せたときだけ markWarned を呼ぶ（出せないのに記録すると SILENT_DAYS 日黙る）。
+     */
+    fun peekWarningIfSilent(context: Context): String? {
         val p = prefs(context)
         val now = System.currentTimeMillis()
 
@@ -80,8 +91,6 @@ object SilenceWatch {
         val lastWarned = p.getLong(KEY_LAST_WARNED, 0L)
         if (now - lastWarned < silentMillis()) return null
 
-        p.edit().putLong(KEY_LAST_WARNED, now).apply()
-
         val days = (now - since) / TimeUnit.DAYS.toMillis(1)
         return if (lastNotified == 0L) {
             "このアプリは導入から${days}日間、一度も通知を出していません。" +
@@ -90,6 +99,13 @@ object SilenceWatch {
             "このアプリは${days}日間、通知を出していません。" +
                 "本当に何も起きていないのか、判定が壊れて黙っているのかを確認してください。"
         }
+    }
+
+    /** 警告通知を実際に出せたときだけ呼ぶ。次の警告は SILENT_DAYS 日後になる */
+    fun markWarned(context: Context) {
+        prefs(context).edit()
+            .putLong(KEY_LAST_WARNED, System.currentTimeMillis())
+            .apply()
     }
 
     /** 設定画面などから状態を見せたいとき用（最後に通知した時刻・ミリ秒。0なら一度も無し） */

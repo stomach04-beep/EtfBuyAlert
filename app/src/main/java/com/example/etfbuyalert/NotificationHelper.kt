@@ -1,11 +1,16 @@
 package com.example.etfbuyalert
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.example.etfbuyalert.data.model.NotificationLog
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -151,11 +156,32 @@ object NotificationHelper {
     // 沈黙監視の警告を送る。
     // 別ID・記録なしで出す：警告自身が「最後に鳴った日」を更新すると
     // 沈黙時計がリセットされ、経過日数の表示が狂うため。
-    fun sendSilenceWarning(context: Context, title: String, message: String) {
+    // 戻り値: 実際に出せたら true。出せなければ履歴にも残さず false（呼び出し側は「警告済み」を記録しない）
+    fun sendSilenceWarning(context: Context, title: String, message: String): Boolean {
+        if (!canPostNotification(context, CHANNEL_ALERT)) return false
         appendHistory(context, "沈黙監視", title, message)
         postNotification(context, CHANNEL_ALERT, title, message,
             SilenceWatch.WARN_NOTIFICATION_ID, NotificationCompat.PRIORITY_DEFAULT,
             record = false)
+        return true
+    }
+
+    /**
+     * 通知を実際に出せる状態かを判定する（アプリ内の判定はこの1か所だけ）。
+     * Android 13+ の実行時許可・アプリ全体の通知ON/OFF・チャンネルのON/OFFを見る。
+     * チャンネルがまだ無ければ出せる扱い（作成前はOFFにされようがないため）。
+     */
+    fun canPostNotification(context: Context, channelId: String = CHANNEL_ALERT): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) return false
+        }
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
+        val channel = context.getSystemService(NotificationManager::class.java)
+            .getNotificationChannel(channelId)
+        return channel == null || channel.importance != NotificationManager.IMPORTANCE_NONE
     }
 
     // 通知の発行だけを行う（履歴追記はしない）。まとめ通知は履歴を別途1件ずつ残すため分離。
