@@ -153,11 +153,27 @@ object YahooFinanceClient {
                 if (v.isNaN() || v <= 0.0) continue  // 0や負は値ではなく欠損
                 points.add(com.example.etfbuyalert.data.model.ChartPoint(ts[i].asLong, v))
             }
+            // 末尾の足が null で返ってきたときは meta の値段で補完する（LESSON-114・v1.26）。
+            // 捨てるだけだと最新の足が1本古いまま MA200ライン・売り時判定に使われる。
+            // 異常値除去（BadTicks）より前に足して、meta の値段も同じ異常値判定にかける。
+            // 最新の足は調整済み終値と生の終値が一致するので、adjclose の列に足しても問題ない
+            val meta = obj.getAsJsonObject("meta")
+            val filled = if (meta != null && ts.size() > 0) {
+                com.example.etfbuyalert.domain.LastBarFill.fill(
+                    points = points,
+                    lastTs = ts[ts.size() - 1].asLong,
+                    metaTime = meta.get("regularMarketTime")?.takeIf { !it.isJsonNull }?.asLong ?: 0L,
+                    metaPrice = meta.get("regularMarketPrice")?.takeIf { !it.isJsonNull }?.asDouble,
+                    intervalSec = if (isWeekly) com.example.etfbuyalert.domain.LastBarFill.WEEKLY_SEC
+                    else com.example.etfbuyalert.domain.LastBarFill.DAILY_SEC,
+                )
+            } else points
+            if (filled.size > points.size) Log.i(TAG, "末尾の空の足を meta の値段で補完した（${if (isWeekly) "週足" else "日足"}）")
             // 異常値の除去は純関数 BadTicks に集約（テスト対象。ここでは呼ぶだけ）。
             // 旧実装は「捨てた点で比較基準を更新しない」ため、本物の水準シフト以降の
             // 全バーが連鎖的に捨てられ履歴が黙って打ち切られていた（v1.23で修正）。
             val cleaned = com.example.etfbuyalert.domain.BadTicks.clean(
-                points, com.example.etfbuyalert.domain.BadTicks.thresholdFor(isWeekly)
+                filled, com.example.etfbuyalert.domain.BadTicks.thresholdFor(isWeekly)
             )
             if (cleaned.dropped > 0) {
                 Log.w(TAG, "履歴の異常値を${cleaned.dropped}件除外した（${if (isWeekly) "週足" else "日足"}）")
