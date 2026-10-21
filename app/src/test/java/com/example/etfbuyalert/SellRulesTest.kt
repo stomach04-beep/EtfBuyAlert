@@ -120,10 +120,14 @@ class SellRulesTest {
         assertNotNull(sig)
         assertFalse("大引け前の暴落で点灯してはいけない（終値確定を待つ）", sig!!.trailFired)
 
-        // 大引け後（15:30）なら同じデータで点灯する
-        val nowAfterClose = today.atTime(15, 30).atZone(tokyo).toEpochSecond() * 1000L
+        // 大引け（15:30）直後はYahooの日本株が約20分遅れでまだ途中値なので、点灯しない
+        val nowJustClosed = today.atTime(15, 40).atZone(tokyo).toEpochSecond() * 1000L
+        assertFalse("15:40はまだ確定前", SellRules.calculate(pts, nowJustClosed)!!.trailFired)
+
+        // 確定とみなす16:00以降なら同じデータで点灯する
+        val nowAfterClose = today.atTime(16, 0).atZone(tokyo).toEpochSecond() * 1000L
         val sig2 = SellRules.calculate(pts, nowAfterClose)
-        assertTrue("大引け後は当日終値で点灯するはず", sig2!!.trailFired)
+        assertTrue("16:00以降は当日終値で点灯するはず", sig2!!.trailFired)
     }
 
     @Test

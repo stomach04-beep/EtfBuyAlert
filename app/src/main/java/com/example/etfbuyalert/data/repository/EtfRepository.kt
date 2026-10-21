@@ -50,7 +50,7 @@ class EtfRepository(private val context: Context) {
     private val MA_LINES_REFRESH_MS = 7L * 24 * 60 * 60 * 1000
 
     // 売り時判定の再計算間隔。判定は日足の確定終値ベースなので1日1回で十分だが、
-    // 大引け（15:10）をまたいだ最初のチェックで当日終値を拾えるよう6時間とする
+    // 当日足の確定（16:00）をまたいだ最初のチェックで当日終値を拾えるよう6時間とする
     // （対象は保有中の日本株個別株のみ＝件数が少なく通信負荷は小さい）。
     private val SELL_REFRESH_MS = 6L * 60 * 60 * 1000
 
@@ -146,6 +146,10 @@ class EtfRepository(private val context: Context) {
 
         val updated = ArrayList<EtfState>(data.etfStates.size)
         var fetchOkCount = 0    // 価格取得に成功した銘柄数（0件なら失敗としてログに残す）
+        // 市場ごとの成功数。終値取得済みの印は自分の市場で1件以上取れたときだけ付ける
+        // （日米合算だと、日本株が全滅・米国株だけ成功の回に日本株の終値を取り逃がす）
+        var jpOkCount = 0
+        var usOkCount = 0
         var attemptCount = 0    // 実際に取りに行った銘柄数（全部スキップの回を失敗と誤記録しないため）
         var skipCount = 0
         for (st in data.etfStates) {
@@ -165,9 +169,12 @@ class EtfRepository(private val context: Context) {
             val quote = YahooFinanceClient.fetchQuote(st.ticker)
             var s = if (quote != null) {
                 fetchOkCount++
+                if (Symbol.isJp(st.ticker)) jpOkCount++ else usOkCount++
                 st.copy(
                     price = quote.price,
-                    previousClose = quote.previousClose ?: st.previousClose,
+                    // 前日終値が取れなかったら古い値を持ち越さない（前日比を出さない）。
+                    // 持ち越すと v1.26 までの「約5営業日前の終値」が残り続ける
+                    previousClose = quote.previousClose,
                     // asOf＝最終取得成功時刻。失敗時は更新しない＝鮮度ガード(Freshness)の判定キー
                     asOf = now,
                     isLive = quote.isLive
@@ -209,10 +216,8 @@ class EtfRepository(private val context: Context) {
         // クロージング（終値）取得を済ませた印。次の閉場中の回はここを見てスキップする。
         // 取得に1件も成功していない回は「済んだ」ことにしない（通信断で空振りした回を
         // 済み扱いにすると、その日の終値を永久に取り逃がす）。
-        if (fetchOkCount > 0) {
-            if (jpPlan.isClosingRun) data.jpClosingFetchedOn = jpPlan.sessionKey
-            if (usPlan.isClosingRun) data.usClosingFetchedOn = usPlan.sessionKey
-        }
+        if (jpOkCount > 0 && jpPlan.isClosingRun) data.jpClosingFetchedOn = jpPlan.sessionKey
+        if (usOkCount > 0 && usPlan.isClosingRun) data.usClosingFetchedOn = usPlan.sessionKey
 
         // ためたアラートをまとめて送信（2件以上は1件のまとめ通知に集約）
         NotificationHelper.sendAlerts(context, pending)
