@@ -199,16 +199,55 @@ object YahooFinanceClient {
                 ?: lastClose(result[0].asJsonObject)
                 ?: return null
 
-            // 前日終値：chartPreviousClose（場中も前々日にならず安定）
-            val prevClose = meta.get("chartPreviousClose")?.takeIf { !it.isJsonNull }?.asDouble
-                ?: meta.get("previousClose")?.takeIf { !it.isJsonNull }?.asDouble
+            // 前日終値：日足の終値配列から「最新取引日より前の最後の終値」を取る。
+            // chartPreviousClose は「取った期間（range=5d）の最初の足の1本前」＝約5営業日前の終値で、
+            // 前日比が1週間分の値動きになっていた（2026-10-22 実データで確認: VOO 707.43=10/14終値、前日10/20は706.80）。
+            // previousClose は日足では返ってこない。どちらも前日終値として使わない。
+            val obj = result[0].asJsonObject
+            val gmtOffset = meta.get("gmtoffset")?.takeIf { !it.isJsonNull }?.asLong ?: 0L
+            val marketTime = meta.get("regularMarketTime")?.takeIf { !it.isJsonNull }?.asLong
+            val prevClose = marketTime?.let {
+                prevCloseBefore(timestamps(obj), closes(obj), it, gmtOffset)
+            }
 
-            val state = meta.get("marketState")?.takeIf { !it.isJsonNull }?.asString ?: ""
-            return Quote(ticker, price, prevClose, isLive = state == "REGULAR")
+            // 場中か：marketState は chart API では返ってこないため、
+            // currentTradingPeriod.regular の開始〜終了と今の時刻で判定する
+            val nowSec = System.currentTimeMillis() / 1000
+            val regular = meta.getAsJsonObject("currentTradingPeriod")?.getAsJsonObject("regular")
+            val start = regular?.get("start")?.takeIf { !it.isJsonNull }?.asLong
+            val end = regular?.get("end")?.takeIf { !it.isJsonNull }?.asLong
+            val live = start != null && end != null && nowSec in start until end
+            return Quote(ticker, price, prevClose, isLive = live)
         } catch (e: Exception) {
             Log.e(TAG, "$ticker パース例外: ${e.message}")
             return null
         }
+    }
+
+    // 足の時刻（秒）の配列。無ければ空。
+    private fun timestamps(resultObj: com.google.gson.JsonObject): List<Long> = try {
+        resultObj.getAsJsonArray("timestamp")?.map { it.asLong } ?: emptyList()
+    } catch (e: Exception) { emptyList() }
+
+    // 終値の配列（nullを含む）。無ければ空。
+    private fun closes(resultObj: com.google.gson.JsonObject): List<Double?> = try {
+        resultObj.getAsJsonObject("indicators")?.getAsJsonArray("quote")?.get(0)?.asJsonObject
+            ?.getAsJsonArray("close")?.map { if (it.isJsonNull) null else it.asDouble } ?: emptyList()
+    } catch (e: Exception) { emptyList() }
+
+    // 最新取引日（regularMarketTime の取引所の日付）より前の、最後の非null終値を返す。
+    // 日付は取引所の時差（gmtoffset 秒）を足してから日単位に切る。見つからなければ null（前日比は出さない）。
+    internal fun prevCloseBefore(
+        timestamps: List<Long>, closes: List<Double?>, marketTimeSec: Long, gmtOffsetSec: Long
+    ): Double? {
+        val marketDay = Math.floorDiv(marketTimeSec + gmtOffsetSec, 86400L)
+        val n = minOf(timestamps.size, closes.size)
+        for (i in n - 1 downTo 0) {
+            val day = Math.floorDiv(timestamps[i] + gmtOffsetSec, 86400L)
+            val c = closes[i]
+            if (day < marketDay && c != null) return c
+        }
+        return null
     }
 
     // 日足の終値配列から最後の非null値を返す（確定終値の代用）

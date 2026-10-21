@@ -47,8 +47,9 @@ object SellRules {
     const val MA_REARM = 0.01
 
     private val TOKYO: ZoneId = ZoneId.of("Asia/Tokyo")
-    // 大引け後、Yahooの日足が確定値になるまでの余裕を見て15:10とする
-    private val CLOSE_CONFIRMED: LocalTime = LocalTime.of(15, 10)
+    // 当日の日足を確定値とみなす時刻。東証の大引けは15:30（2024-11-05〜）、
+    // Yahooの日本株は約20分遅れなので、余裕を見て16:00とする（旧15:10は引け前の値を確定扱いしていた）
+    private val CLOSE_CONFIRMED: LocalTime = LocalTime.of(16, 0)
 
     // 判定結果（EtfStateへキャッシュされ、AlertEngineが通知判定に使う）
     data class Signal(
@@ -119,7 +120,7 @@ object SellRules {
         )
     }
 
-    // 当日バーが未確定（東京時間で15:10前）なら最後のバーを落とす
+    // 当日バーが未確定（東京時間で16:00前）なら最後のバーを落とす
     private fun dropUnconfirmed(sorted: List<ChartPoint>, now: Long): List<ChartPoint> {
         val nowJst = Instant.ofEpochMilli(now).atZone(TOKYO)
         val lastBarDate = Instant.ofEpochSecond(sorted.last().t).atZone(TOKYO).toLocalDate()
