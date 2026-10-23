@@ -25,10 +25,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.etfbuyalert.ui.kit.Fmt
+import com.example.etfbuyalert.ui.kit.InfoToggle
+import com.example.etfbuyalert.ui.kit.Panel
+import com.example.etfbuyalert.ui.kit.ScreenHeader
+import com.example.etfbuyalert.ui.kit.Sem
+import com.example.etfbuyalert.ui.kit.Tone
+import com.example.etfbuyalert.ui.kit.ToneChip
+import com.example.etfbuyalert.ui.kit.num
 import com.example.etfbuyalert.data.model.EtfState
 import com.example.etfbuyalert.data.repository.Settings
 import com.example.etfbuyalert.domain.AlertEngine
@@ -38,12 +49,11 @@ import com.example.etfbuyalert.domain.Money
 import com.example.etfbuyalert.domain.NewsWarning
 import com.example.etfbuyalert.domain.Symbol
 import com.example.etfbuyalert.domain.WatchRanking
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
-// ブックマーク（★）の色。タブのラベルとカードのアイコンで同じ色を使う（対応が分かるように）
-private val BOOKMARK_COLOR = Color(0xFFFFD54F)
+// ブックマーク（★）の色。タブのラベルとカードのアイコンで同じ色を使う（対応が分かるように）。
+// 2026-10-23 表示の決まり UiKit：直書きの金色をやめ本文色に（secondary はミッドナイト配色で primary とほぼ同じ水色になり「買いの合図」と紛れた）
+@Composable
+private fun bookmarkColor(): Color = MaterialTheme.colorScheme.onSurface
 
 // 監視タブ — 監視中銘柄（ETF＋ADP型の個別株）の現在値と各ラインまでの距離を表示。
 // 90行規模になったため、種別タブ（発火中/日本株/米国株/ETF）で絞り込み、
@@ -74,16 +84,28 @@ fun WatchListScreen(
         onBookmarkErrorShown()
     }
 
+    // 最終同期の時刻（今日 07:12／今年 10/22(水) 07:12。書き方は UiKit の Fmt に統一）
+    val syncText = if (lastSyncAt > 0) "最終同期 ${Fmt.dateTime(lastSyncAt)}" + (if (lastSyncOk) "" else "（失敗）")
+                   else "未同期"
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("買い時アラート", fontWeight = FontWeight.Bold) },
-                actions = {
-                    IconButton(onClick = onRefresh, enabled = !isLoading) {
-                        Icon(Icons.Default.Refresh, contentDescription = "更新")
-                    }
+            // 2026-10-23 表示の決まり UiKit：TopAppBar をやめ、背景と同じ色の見出し1段に。
+            // 外側の Scaffold は上の余白を入れない作りなので、ここでステータスバー分を空ける
+            ScreenHeader(
+                title = "買い時アラート",
+                sub = syncText,
+                modifier = Modifier.statusBarsPadding()
+            ) {
+                IconButton(onClick = onRefresh, enabled = !isLoading) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "更新",
+                        tint = if (isLoading) MaterialTheme.colorScheme.onSurfaceVariant
+                               else MaterialTheme.colorScheme.primary
+                    )
                 }
-            )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { pad ->
@@ -102,14 +124,8 @@ fun WatchListScreen(
                 ErrorBanner(lastSyncError)
             }
 
-            // 最終同期時刻
-            Text(
-                text = if (lastSyncAt > 0) "最終同期: ${fmtTime(lastSyncAt)}" + (if (lastSyncOk) "" else "（失敗）")
-                       else "未同期",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 6.dp)
-            )
+            // 最終同期時刻は見出し（ScreenHeader の sub）へ移した
+            Spacer(Modifier.height(4.dp))
 
             if (etfStates.isEmpty()) {
                 EmptyState()
@@ -173,7 +189,7 @@ fun WatchListScreen(
                                 watchTab == Settings.TAB_PICKAXE -> "つるはし候補（テーマ過熱×出遅れ）の検知はいまありません\n（PC側のつるはしレーダーが「本命が急騰したのに道具側が出遅れている」銘柄を自動で登録します。候補であり推奨ではありません）"
                                 else -> "この種別に該当する銘柄はありません"
                             },
-                            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -185,6 +201,19 @@ fun WatchListScreen(
                                 onToggleBookmark = { onToggleBookmark(st.ticker) },
                                 onClick = { onEtfClick(st.ticker) }
                             )
+                        }
+                        // カードの見方（ふだんは畳む。2026-10-23 表示の決まり UiKit）
+                        item {
+                            InfoToggle(title = "カードの見方") {
+                                Text(
+                                    "・「押し目まで ◯%」＝押し目ラインまでの距離（並び順の基準）。下回ると色が付きます\n" +
+                                    "・各ラインの右の％＝現在値がそのラインより何％上（+）か下（−）か\n" +
+                                    "・前日比は ▲上げ ▼下げ の記号だけで示します（色は付けません）\n" +
+                                    "・赤い札は損切りライン割れ（保有中）だけに使います",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                         item { Spacer(Modifier.height(12.dp)) }
                     }
@@ -341,6 +370,8 @@ private fun WatchTabSelector(
         selectedTabIndex = selectedIndex,
         edgePadding = 0.dp,
         containerColor = Color.Transparent,
+        // 2026-10-23 表示の決まり UiKit：区切り線を引かない（選択中の下線だけ残す）
+        divider = {},
     ) {
         TABS.forEachIndexed { i, tab ->
             val n = states.count(tab.match)
@@ -363,8 +394,8 @@ private fun WatchTabSelector(
                             tab.label,
                             // ★（ブックマーク）タブは記号1文字なので少し大きめ＋金色にして
                             // カード右上のブックマークアイコンと色を揃える
-                            fontSize = if (isBookmarkTab) 17.sp else 13.sp,
-                            color = if (isBookmarkTab) BOOKMARK_COLOR else Color.Unspecified,
+                            fontSize = if (isBookmarkTab) 17.sp else 14.sp,
+                            color = if (isBookmarkTab) bookmarkColor() else Color.Unspecified,
                             fontWeight = if (i == selectedIndex) FontWeight.Bold else FontWeight.Normal,
                             maxLines = 1,
                             softWrap = false
@@ -376,22 +407,24 @@ private fun WatchTabSelector(
                                 fontWeight = if (fired) FontWeight.Bold else FontWeight.Normal,
                                 maxLines = 1,
                                 softWrap = false,
+                                // 2026-10-23 表示の決まり UiKit：発火（＝買いの合図）は primary 1色。
+                                // 選択中の件数は primary と紛れないよう本文色にする
                                 color = when {
-                                    fired -> Color(0xFFFFB74D)          // 発火中タブは件数自体が発火数
-                                    i == selectedIndex -> MaterialTheme.colorScheme.primary
+                                    fired -> MaterialTheme.colorScheme.primary   // 発火中タブは件数自体が発火数
+                                    i == selectedIndex -> MaterialTheme.colorScheme.onSurface
                                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                                 }
                             )
-                            // タブ内の発火中件数（1件以上のときだけ「発火n」を警告色で添える）
+                            // タブ内の発火中件数（1件以上のときだけ「発火n」を合図の色で添える）
                             if (firedInTab > 0) {
                                 Spacer(Modifier.width(4.dp))
                                 Text(
                                     "発火$firedInTab",
-                                    fontSize = 11.sp,
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     softWrap = false,
-                                    color = Color(0xFFFFB74D)
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
                         }
@@ -406,13 +439,13 @@ private fun WatchTabSelector(
 private fun ErrorBanner(message: String) {
     Surface(
         color = MaterialTheme.colorScheme.errorContainer,
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.medium,   // 角丸はテーマの12dp（2026-10-23 表示の決まり UiKit）
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
     ) {
         Text(
             "⚠ $message\n（前回取得した価格で監視を続けています）",
             color = MaterialTheme.colorScheme.onErrorContainer,
-            fontSize = 13.sp,
+            fontSize = 14.sp,
             modifier = Modifier.padding(10.dp)
         )
     }
@@ -425,17 +458,16 @@ private fun EmptyState() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("監視中の銘柄がありません", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text("監視中の銘柄がありません", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         Spacer(Modifier.height(8.dp))
         Text(
             "「設定」タブでNotionトークンを入力し、\n更新ボタンを押すと、Notionの\n「アプリ監視」ON銘柄が表示されます。",
-            fontSize = 13.sp,
+            fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EtfCard(
     st: EtfState,
@@ -445,109 +477,115 @@ private fun EtfCard(
     onClick: () -> Unit
 ) {
     val zone = AlertEngine.currentZone(st)
-    Card(
+    // 2026-10-23 表示の決まり UiKit：Card（1段上の地）をやめ、影・枠なしの面 Panel で区切る
+    Panel(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         // 日本株は .T を落として4桁コードで見せる（内部は正規形のまま＝Symbol参照）
-                        Text(Symbol.display(st.ticker), fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                        Text(
+                            Symbol.display(st.ticker),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            style = TextStyle.Default.num(),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                         // 種別チップは「発火中」タブでのみ表示（市場タブでは絞り込み済みで冗長）
                         if (showKind) {
                             Spacer(Modifier.width(6.dp))
                             KindChip(AssetKind.of(st))
                         }
-                        // つるはし出遅れ候補のバッジ（pickaxe-radarの検知。候補提示であり買い推奨ではない）
+                        // つるはし出遅れ候補のバッジ（pickaxe-radarの検知。候補提示であり買い推奨ではない）。
+                        // 良し悪しではなく「知らせ」なので情報の札（直書きの橙をやめた）
                         if (st.lineMethod == AssetKind.METHOD_PICKAXE && st.pickaxeLagging) {
                             Spacer(Modifier.width(6.dp))
-                            Box(
-                                Modifier.clip(RoundedCornerShape(4.dp))
-                                    .background(Color(0xFFE65100))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text("出遅れ", color = Color.White, fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold)
-                            }
+                            ToneChip("出遅れ", Tone.INFO)
                         }
                     }
                     Text(
                         st.name,
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 ZoneBadge(zone)
-                Spacer(Modifier.width(4.dp))
-                // ブックマークの切替（押すと即保存され、★タブの対象になる）
-                IconButton(onClick = onToggleBookmark, modifier = Modifier.size(36.dp)) {
+                // ブックマークの切替（押すと即保存され、★タブの対象になる）。押す場所は既定の48dp
+                IconButton(onClick = onToggleBookmark) {
                     Icon(
                         imageVector = if (bookmarked) Icons.Filled.Star else Icons.Outlined.StarBorder,
                         contentDescription = if (bookmarked) "ブックマークを外す" else "ブックマークに追加",
-                        tint = if (bookmarked) BOOKMARK_COLOR else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (bookmarked) bookmarkColor() else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             // 鮮度ガード：7日超の古い価格は表示しない（判定・文言は domain.Freshness が単一の真実の源）
             val priceInvalid = Freshness.isInvalid(st.asOf)
-            if (priceInvalid) {
-                // 価格を出さずに取得失敗を明示（古い値を「現在値」と誤解させない）
-                Text(
-                    Freshness.INVALID_TEXT,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = MaterialTheme.colorScheme.error
-                )
-            } else Row(verticalAlignment = Alignment.Bottom) {
-                Text(Money.format(st.ticker, st.price), fontWeight = FontWeight.Bold, fontSize = 26.sp)
-                // 3日超は「（◯日前の値）」を添えて、最新値と誤解させない
-                val staleNote = Freshness.staleSuffix(st.asOf)
-                if (staleNote.isNotEmpty()) {
-                    Spacer(Modifier.width(4.dp))
-                    Text(staleNote, fontSize = 12.sp, color = Color(0xFFFFB74D),
-                        modifier = Modifier.padding(bottom = 4.dp))
-                }
-                Spacer(Modifier.width(8.dp))
-                if (st.previousClose != null && st.price != null) {
-                    val diff = (st.price - st.previousClose) / st.previousClose * 100.0
-                    Text(
-                        String.format("前日比 %+.2f%%", diff),
-                        fontSize = 13.sp,
-                        color = if (diff >= 0) Color(0xFF4CAF50) else Color(0xFFE57373),
-                        modifier = Modifier.padding(bottom = 3.dp)
-                    )
-                }
-                if (st.isLive) {
-                    Spacer(Modifier.width(6.dp))
-                    Text("● LIVE", fontSize = 11.sp, color = Color(0xFF4CAF50),
-                        modifier = Modifier.padding(bottom = 4.dp))
-                }
-            }
             // 「押し目まであと何%」＝並べ替えのキーと同じ値を表示する（AlertEngineが単一の真実の源）
             val gap = AlertEngine.dipGapPercent(st)
-            if (gap != null) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    if (gap <= 0) String.format("押し目を %.1f%% 下回っています", -gap)
-                    else String.format("押し目まであと %.1f%%", gap),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (gap <= 0) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            // 2026-10-23 表示の決まり UiKit：並び順の基準＝押し目までの距離をカードの主役（左・18sp太字）にし、
+            // 価格は右に寄せ、前日比などは小さい補足にする（以前は価格26spに距離13spが埋もれていた）
+            // 1段目＝距離（左・weight）と価格（右）。幅が足りないときは距離の文字を省略記号で詰める
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) {
+                    if (gap != null) {
+                        // 下回った＝買いの合図なので primary 1色（緑は「完了・良好」専用）
+                        Text(
+                            if (gap <= 0) "押し目を ${Fmt.num(-gap, 1)}% 下回り"
+                            else "押し目まで ${Fmt.num(gap, 1)}%",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (gap <= 0) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                if (priceInvalid) {
+                    // 価格を出さずに取得失敗を明示（古い値を「現在値」と誤解させない）。
+                    // 赤は損切り割れ専用にするため、警戒の色にする
+                    Text(
+                        Freshness.INVALID_TEXT,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Sem.fg(Tone.WARN),
+                        textAlign = TextAlign.End
+                    )
+                } else {
+                    Text(
+                        Money.format(st.ticker, st.price),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        style = TextStyle.Default.num(),
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+            }
+            // 2段目＝価格の補足（右寄せ・12sp）。1段目と横幅を取り合わないよう別の行にする
+            if (!priceInvalid) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                    PriceSubLine(st)
+                }
             }
             // 週足RSI（「RSI利確監視」=ONの銘柄のみ。閾値はAlertEngineが単一の真実の源）
             // 75以上で警告色（順張りの過熱）、80以上でさらに強調（エラー色）
             val rsi = st.weeklyRsi
             if (st.rsiWatch && rsi != null) {
                 Spacer(Modifier.height(4.dp))
+                // 2026-10-23 表示の決まり UiKit：過熱は「危険」ではないので赤を使わず、警戒／注意の色に
                 val (rsiColor, rsiWeight) = when {
-                    rsi >= AlertEngine.RSI_TAKE2 -> MaterialTheme.colorScheme.error to FontWeight.Bold
-                    rsi >= AlertEngine.RSI_TAKE1 -> Color(0xFFFFB74D) to FontWeight.Bold
+                    rsi >= AlertEngine.RSI_TAKE2 -> Sem.fg(Tone.WARN) to FontWeight.Bold
+                    rsi >= AlertEngine.RSI_TAKE1 -> Sem.fg(Tone.CAUTION) to FontWeight.Bold
                     else -> MaterialTheme.colorScheme.onSurfaceVariant to FontWeight.Normal
                 }
                 Text(
@@ -572,7 +610,7 @@ private fun EtfCard(
                     sellText,
                     fontSize = 12.sp,
                     fontWeight = if (fired) FontWeight.Bold else FontWeight.Normal,
-                    color = if (fired) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (fired) Sem.fg(Tone.WARN) else MaterialTheme.colorScheme.onSurfaceVariant  // 直書きの橙→警戒の色
                 )
             }
             // ニュース警告（PC側の照合ジョブがNotionへ書いた【要注意】材料。表示判定は NewsWarning が単一定義）
@@ -584,7 +622,7 @@ private fun EtfCard(
                     "⚠ $newsText",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFB74D),
+                    color = Sem.fg(Tone.WARN),   // 直書きの橙→警戒の色（2026-10-23 表示の決まり UiKit）
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -604,34 +642,84 @@ private fun EtfCard(
 }
 
 // 種別チップ（米国株 / 日本株 / ETF）。ティッカーの隣に小さく出す。
+// 2026-10-23 表示の決まり UiKit：種別は良し悪しではないので、3色の直書きをやめ通常の札1種類に
+// （種別は文字で区別できる）
 @Composable
 private fun KindChip(kind: AssetKind.Kind) {
-    val bg = when (kind) {
-        AssetKind.Kind.US_STOCK -> Color(0xFF37474F)
-        AssetKind.Kind.JP_STOCK -> Color(0xFF4E342E)
-        AssetKind.Kind.ETF -> Color(0xFF283593)
-    }
-    Box(
-        Modifier.clip(RoundedCornerShape(4.dp)).background(bg).padding(horizontal = 6.dp, vertical = 2.dp)
-    ) {
-        Text(kind.label, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+    ToneChip(kind.label, Tone.NORMAL)
+}
+
+// ゾーンの札。2026-10-23 表示の決まり UiKit：
+//  ・損切り割れ＝危険（赤）。赤はここだけ
+//  ・押し目・深押し＝買いの合図なので primary 1色（緑は使わない）。深押しは塗りつぶしで1段強く
+//  ・順張り＝情報（青）、通常・取得なし＝通常（灰）
+@Composable
+private fun ZoneBadge(zone: AlertEngine.Zone) {
+    when (zone) {
+        AlertEngine.Zone.STOP -> ToneChip(zone.label, Tone.CRIT)
+        AlertEngine.Zone.DEEP -> SignalChip(zone.label, filled = true)
+        AlertEngine.Zone.DIP -> SignalChip(zone.label, filled = false)
+        AlertEngine.Zone.BREAKOUT -> ToneChip(zone.label, Tone.INFO)
+        AlertEngine.Zone.NORMAL, AlertEngine.Zone.NODATA -> ToneChip(zone.label, Tone.NORMAL)
     }
 }
 
+// 買いの合図の札（ToneChip と同じ形で、色だけテーマの primary）。
+// filled=true は primary の塗りつぶし、false は primary を薄く敷いた地に primary の文字
 @Composable
-private fun ZoneBadge(zone: AlertEngine.Zone) {
-    val (bg, fg) = when (zone) {
-        AlertEngine.Zone.STOP -> Color(0xFFC62828) to Color.White
-        AlertEngine.Zone.DEEP -> Color(0xFF2E7D32) to Color.White
-        AlertEngine.Zone.DIP -> Color(0xFF4CAF50) to Color.White
-        AlertEngine.Zone.BREAKOUT -> Color(0xFF1565C0) to Color.White
-        AlertEngine.Zone.NORMAL -> Color(0xFF455A64) to Color.White
-        AlertEngine.Zone.NODATA -> Color(0xFF616161) to Color.White
-    }
-    Box(
-        Modifier.clip(RoundedCornerShape(6.dp)).background(bg).padding(horizontal = 10.dp, vertical = 5.dp)
-    ) {
-        Text(zone.label, color = fg, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+private fun SignalChip(text: String, filled: Boolean) {
+    val primary = MaterialTheme.colorScheme.primary
+    val bg = if (filled) primary else primary.copy(alpha = 0.16f).compositeOver(MaterialTheme.colorScheme.surface)
+    val fg = if (filled) MaterialTheme.colorScheme.onPrimary else primary
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.Bold,
+        color = fg,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(bg)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    )
+}
+
+// 価格の下の補足1行（12sp）：古い値の注記・前日比・場中の印。
+// 2026-10-23 表示の決まり UiKit：前日比は色を付けず ▲▼ の記号だけ（赤は危険専用・緑は良好専用）
+@Composable
+private fun PriceSubLine(st: EtfState) {
+    // 3日超は「（◯日前の値）」を添えて、最新値と誤解させない（文言は Freshness が単一定義）
+    val staleNote = Freshness.staleSuffix(st.asOf)
+    val prev = st.previousClose
+    val price = st.price
+    val diffText = if (prev != null && price != null) {
+        val diff = (price - prev) / prev * 100.0
+        val delta = Fmt.change(diff, 2)
+        // Fmt.change は 0 のとき「変わらず」を返すので % を付けない
+        "前日比 " + if (diff == 0.0) delta else "$delta%"
+    } else null
+    if (staleNote.isEmpty() && diffText == null && !st.isLive) return
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (staleNote.isNotEmpty()) {
+            Text(staleNote, fontSize = 12.sp, color = Sem.fg(Tone.WARN), maxLines = 1, softWrap = false)
+            Spacer(Modifier.width(6.dp))
+        }
+        if (diffText != null) {
+            Text(
+                diffText,
+                fontSize = 12.sp,
+                style = TextStyle.Default.num(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false
+            )
+        }
+        // 市場が開いている時間（isLive＝取引時間中）の印。英語の LIVE をやめ日本語に
+        if (st.isLive) {
+            Spacer(Modifier.width(6.dp))
+            Text("● 場中", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1, softWrap = false)
+        }
     }
 }
 
@@ -639,18 +727,42 @@ private fun ZoneBadge(zone: AlertEngine.Zone) {
 @Composable
 private fun LineRow(ticker: String, label: String, line: Double?, price: Double?, dipStyle: Boolean, suffix: String = "") {
     if (line == null) return
+    // +なら現在値はラインより上（意味は画面下の「カードの見方」に畳んで書いた）
     val gapText = if (price != null && price != 0.0) {
         val pct = (line - price) / price * 100.0
-        String.format("（現在値 %+.1f%%）", -pct)  // +なら現在値はラインより上
+        Fmt.pct(-pct, 1)
     } else ""
+    // 2026-10-23 表示の決まり UiKit：ライン値と乖離率を別の Text に分け、どちらも右寄せの等幅数字に
+    // （1つの文字列にまとめると桁がそろわず縦に読めなかった）
     Row(
         Modifier.fillMaxWidth().padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("$label$suffix", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("${Money.format(ticker, line)} $gapText", fontSize = 13.sp)
+        Text(
+            "$label$suffix",
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            Money.format(ticker, line),
+            fontSize = 14.sp,
+            style = TextStyle.Default.num(),
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            softWrap = false
+        )
+        Text(
+            gapText,
+            fontSize = 12.sp,
+            style = TextStyle.Default.num(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.widthIn(min = 64.dp)
+        )
     }
 }
-
-private fun fmtTime(epoch: Long): String =
-    SimpleDateFormat("M/d HH:mm", Locale.JAPAN).format(Date(epoch))

@@ -19,7 +19,9 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.etfbuyalert.data.model.ChartSeries
@@ -27,16 +29,40 @@ import com.example.etfbuyalert.data.model.EtfState
 import com.example.etfbuyalert.domain.AlertEngine
 import com.example.etfbuyalert.domain.Freshness
 import com.example.etfbuyalert.domain.Money
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.example.etfbuyalert.ui.kit.Fmt
+import com.example.etfbuyalert.ui.kit.Panel
+import com.example.etfbuyalert.ui.kit.Sem
+import com.example.etfbuyalert.ui.kit.Tone
+import com.example.etfbuyalert.ui.kit.num
+import java.time.Instant
+import java.time.ZoneId
 
-// ラインの色（チャートと凡例で共通＝DRY）
-private val COLOR_DIP = Color(0xFF4CAF50)
-private val COLOR_DEEP = Color(0xFF2E7D32)
-private val COLOR_BREAKOUT = Color(0xFF1565C0)
-private val COLOR_STOP = Color(0xFFE53935)
-private val COLOR_PRICE = Color(0xFF90CAF9)
+// ラインの色（チャートと凡例で共通＝DRY）。
+// 2026-10-23 表示の決まり UiKit：直書きの緑・赤・青をやめ、意味の色に寄せる。
+//  ・押し目／深押し＝買いの合図なので primary 1色（深押しは少し薄くして区別。線の横の「押」「深」でも分かる）
+//  ・損切り＝危険（赤はここだけ）／順張り＝情報（青）／価格の線＝本文色
+// 明暗の切替に追従させるため、Composable の中で引いて描画側へ渡す
+private data class LineColors(
+    val dip: Color,
+    val deep: Color,
+    val breakout: Color,
+    val stop: Color,
+    val price: Color,
+    val axisLabel: Color,
+)
+
+@Composable
+private fun lineColors(): LineColors {
+    val primary = MaterialTheme.colorScheme.primary
+    return LineColors(
+        dip = primary,
+        deep = primary.copy(alpha = 0.6f),
+        breakout = Sem.fg(Tone.INFO),
+        stop = Sem.fg(Tone.CRIT),
+        price = MaterialTheme.colorScheme.onSurface,
+        axisLabel = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -55,42 +81,63 @@ fun EtfDetailScreen(
         return
     }
 
+    val colors = lineColors()
+
     Scaffold(
         topBar = {
+            // 2026-10-23 表示の決まり UiKit：見出しは背景と同じ色の1段（色の帯にしない）。
+            // タイトルは1行に収める（長いと2行に折り返して時計の直下へ押し上げられる）
             TopAppBar(
-                title = { Text("${state.ticker} チャート", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        "${state.ticker} チャート",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
             )
         }
     ) { pad ->
         Column(
             Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // 銘柄名・現在値
-            Text(state.name, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(state.name, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             // 鮮度ガード：7日超の古い価格は「現在値」として出さない（判定・文言はdomain.Freshnessが単一の真実の源）
             if (Freshness.isInvalid(state.asOf)) {
+                // 赤は損切り専用にするため警戒の色（2026-10-23 表示の決まり UiKit）
                 Text(Freshness.INVALID_TEXT, fontWeight = FontWeight.Bold, fontSize = 16.sp,
-                    color = COLOR_STOP)
+                    color = Sem.fg(Tone.WARN))
             } else Row(verticalAlignment = Alignment.Bottom) {
-                Text(Money.format(state.ticker, state.price), fontWeight = FontWeight.Bold, fontSize = 24.sp)
+                // この画面の主役の数字（等幅・桁区切りは Money が単一定義）
+                Text(Money.format(state.ticker, state.price), fontWeight = FontWeight.Bold, fontSize = 24.sp,
+                    style = TextStyle.Default.num())
                 // 3日超は「（◯日前の値）」を添えて、最新値と誤解させない
                 val staleNote = Freshness.staleSuffix(state.asOf)
                 if (staleNote.isNotEmpty()) {
                     Spacer(Modifier.width(4.dp))
-                    Text(staleNote, fontSize = 12.sp, color = Color(0xFFFFB74D),
+                    Text(staleNote, fontSize = 12.sp, color = Sem.fg(Tone.WARN),
                         modifier = Modifier.padding(bottom = 3.dp))
                 }
                 Spacer(Modifier.width(8.dp))
                 if (state.previousClose != null && state.price != null && state.previousClose != 0.0) {
                     val diff = (state.price - state.previousClose) / state.previousClose * 100.0
-                    Text(String.format("前日比 %+.2f%%", diff), fontSize = 13.sp,
-                        color = if (diff >= 0) COLOR_DIP else COLOR_STOP,
+                    // 前日比は色を付けず ▲▼ の記号だけ（Fmt.change は 0 のとき「変わらず」なので % を付けない）
+                    val delta = Fmt.change(diff, 2)
+                    Text("前日比 " + if (diff == 0.0) delta else "$delta%", fontSize = 12.sp,
+                        style = TextStyle.Default.num(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 3.dp))
                 }
             }
@@ -104,12 +151,12 @@ fun EtfDetailScreen(
                 }
             }
 
-            // チャート本体
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+            // チャート本体（2026-10-23 表示の決まり UiKit：Card の1段上の地をやめ、影・枠なしの面 Panel に）
+            Panel(modifier = Modifier.fillMaxWidth()) {
                 Box(Modifier.fillMaxWidth().height(280.dp).padding(8.dp), contentAlignment = Alignment.Center) {
                     when {
                         chart != null && chart.points.size >= 2 ->
-                            PriceChart(chart, state)
+                            PriceChart(chart, state, colors)
                         chartLoading ->
                             CircularProgressIndicator()
                         else ->
@@ -119,16 +166,16 @@ fun EtfDetailScreen(
             }
 
             // 凡例
-            Legend(state)
+            Legend(state, colors)
 
-            // ラインの値一覧
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+            // ラインの値一覧（面 Panel で区切る）
+            Panel(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     // 通貨判定のためティッカーを引き回す
-                    LineValue(state.ticker, "買い時(押し目)", state.dipPrice, COLOR_DIP)
-                    LineValue(state.ticker, "買い増し(深押し)", state.deepDipPrice, COLOR_DEEP)
-                    LineValue(state.ticker, "順張り(上抜け)", state.breakoutPrice, COLOR_BREAKOUT)
-                    LineValue(state.ticker, "損切り", state.stopLossPrice, COLOR_STOP)
+                    LineValue(state.ticker, "買い時(押し目)", state.dipPrice, colors.dip)
+                    LineValue(state.ticker, "買い増し(深押し)", state.deepDipPrice, colors.deep)
+                    LineValue(state.ticker, "順張り(上抜け)", state.breakoutPrice, colors.breakout)
+                    LineValue(state.ticker, "損切り", state.stopLossPrice, colors.stop)
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -138,8 +185,10 @@ fun EtfDetailScreen(
 
 // 価格チャート（折れ線＋各ラインの水平線）
 @Composable
-private fun PriceChart(chart: ChartSeries, state: EtfState) {
+private fun PriceChart(chart: ChartSeries, state: EtfState, colors: LineColors) {
     val gridColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)
+    // 軸ラベルの色（直書きの LTGRAY だとライトテーマで読めないため補足色に）
+    val axisArgb = colors.axisLabel.toArgb()
 
     Canvas(Modifier.fillMaxSize()) {
         val pts = chart.points
@@ -188,10 +237,10 @@ private fun PriceChart(chart: ChartSeries, state: EtfState) {
                 drawText(label, leftPad + w + 6f, yy + 9f, p)
             }
         }
-        hline(state.dipPrice, COLOR_DIP, "押" )
-        hline(state.deepDipPrice, COLOR_DEEP, "深")
-        hline(state.breakoutPrice, COLOR_BREAKOUT, "順")
-        hline(state.stopLossPrice, COLOR_STOP, "損")
+        hline(state.dipPrice, colors.dip, "押" )
+        hline(state.deepDipPrice, colors.deep, "深")
+        hline(state.breakoutPrice, colors.breakout, "順")
+        hline(state.stopLossPrice, colors.stop, "損")
 
         // 価格の折れ線
         val path = Path()
@@ -199,16 +248,16 @@ private fun PriceChart(chart: ChartSeries, state: EtfState) {
             val px = x(i); val py = y(pt.close)
             if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
         }
-        drawPath(path, COLOR_PRICE, style = Stroke(width = 3f))
+        drawPath(path, colors.price, style = Stroke(width = 3f))
 
         // 直近の点に丸
         val lastX = x(pts.size - 1); val lastY = y(pts.last().close)
-        drawCircle(COLOR_PRICE, 6f, Offset(lastX, lastY))
+        drawCircle(colors.price, 6f, Offset(lastX, lastY))
 
         // 軸ラベル（最大・最小・日付）
         drawContext.canvas.nativeCanvas.apply {
             val tp = android.graphics.Paint().apply {
-                color = android.graphics.Color.LTGRAY; textSize = 24f; isAntiAlias = true
+                color = axisArgb; textSize = 24f; isAntiAlias = true
             }
             // Y軸ラベルも通貨対応（円建ては桁が大きいがそのまま表示）
             drawText(Money.format(state.ticker, maxV), leftPad + 4f, topPad + 22f, tp)
@@ -221,13 +270,13 @@ private fun PriceChart(chart: ChartSeries, state: EtfState) {
 }
 
 @Composable
-private fun Legend(state: EtfState) {
+private fun Legend(state: EtfState, colors: LineColors) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        LegendDot("価格", COLOR_PRICE)
-        if (state.dipPrice != null) LegendDot("押し目", COLOR_DIP)
-        if (state.deepDipPrice != null) LegendDot("深押し", COLOR_DEEP)
-        if (state.breakoutPrice != null) LegendDot("順張り", COLOR_BREAKOUT)
-        if (state.stopLossPrice != null) LegendDot("損切り", COLOR_STOP)
+        LegendDot("価格", colors.price)
+        if (state.dipPrice != null) LegendDot("押し目", colors.dip)
+        if (state.deepDipPrice != null) LegendDot("深押し", colors.deep)
+        if (state.breakoutPrice != null) LegendDot("順張り", colors.breakout)
+        if (state.stopLossPrice != null) LegendDot("損切り", colors.stop)
     }
 }
 
@@ -245,15 +294,18 @@ private fun LegendDot(label: String, color: Color) {
 // ticker は通貨（円/ドル）判定用
 @Composable
 private fun LineValue(ticker: String, label: String, v: Double?, color: Color) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    // 左のラベル側に weight を付け、右の値（右寄せ・等幅数字）が押し出されないようにする
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(10.dp)) { Canvas(Modifier.fillMaxSize()) { drawCircle(color) } }
             Spacer(Modifier.width(6.dp))
-            Text(label, fontSize = 13.sp)
+            Text(label, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Text(Money.format(ticker, v), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Text(Money.format(ticker, v), fontSize = 14.sp, fontWeight = FontWeight.Bold,
+            style = TextStyle.Default.num())
     }
 }
 
+// チャートの日付ラベル。2026-10-23 表示の決まり UiKit：書き方を Fmt.date に統一（今年 10/22(水)／以前 2025/3/4）
 private fun fmtDate(epochSec: Long): String =
-    SimpleDateFormat("yy/M/d", Locale.JAPAN).format(Date(epochSec * 1000))
+    Fmt.date(Instant.ofEpochSecond(epochSec).atZone(ZoneId.systemDefault()).toLocalDate())
