@@ -31,6 +31,7 @@ import com.example.etfbuyalert.domain.Freshness
 import com.example.etfbuyalert.domain.Money
 import com.example.etfbuyalert.ui.changeColor
 import com.example.etfbuyalert.ui.kit.Fmt
+import com.example.etfbuyalert.ui.kit.HeaderDivider
 import com.example.etfbuyalert.ui.kit.Panel
 import com.example.etfbuyalert.ui.kit.Sem
 import com.example.etfbuyalert.ui.kit.Tone
@@ -88,25 +89,29 @@ fun EtfDetailScreen(
         topBar = {
             // 2026-10-23 表示の決まり UiKit：見出しは背景と同じ色の1段（色の帯にしない）。
             // タイトルは1行に収める（長いと2行に折り返して時計の直下へ押し上げられる）
-            TopAppBar(
-                title = {
-                    Text(
-                        "${state.ticker} チャート",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+            // 見出しの下に境目の線を1本引く（2026-10-24 ユーザー指示）
+            Column {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "${state.ticker} チャート",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background
                     )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
                 )
-            )
+                HeaderDivider()
+            }
         }
     ) { pad ->
         Column(
