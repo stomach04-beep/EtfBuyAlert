@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.etfbuyalert.data.model.NotificationLog
+import com.example.etfbuyalert.ui.kit.HeaderDivider
 
 // ===== 通知の種類ごとの仕分け定義 =====
 // 履歴に入る category 文字列（NotificationHelper / AlertEngine / EtfRepository が書く値）を
@@ -83,14 +84,18 @@ fun HistoryScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("通知履歴", fontWeight = FontWeight.Bold) },
-                actions = {
-                    if (notifications.isNotEmpty()) {
-                        TextButton(onClick = onClear) { Text("クリア") }
+            // 見出しの下に境目の線を1本引く（2026-10-24 ユーザー指示）
+            Column {
+                TopAppBar(
+                    title = { Text("通知履歴", fontWeight = FontWeight.Bold) },
+                    actions = {
+                        if (notifications.isNotEmpty()) {
+                            TextButton(onClick = onClear) { Text("クリア") }
+                        }
                     }
-                }
-            )
+                )
+                HeaderDivider()
+            }
         }
     ) { pad ->
         if (notifications.isEmpty()) {

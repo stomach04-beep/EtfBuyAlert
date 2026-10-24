@@ -28,6 +28,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.etfbuyalert.data.model.EtfState
 import com.example.etfbuyalert.domain.HealthCheck
+import com.example.etfbuyalert.ui.kit.HeaderDivider
 import com.example.etfbuyalert.ui.theme.ThemePrefs
 
 // 設定タブ
@@ -69,7 +70,13 @@ fun SettingsScreen(
     var showClearDialog by remember { mutableStateOf(false) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("設定", fontWeight = FontWeight.Bold) }) }
+        // 見出しの下に境目の線を1本引く（2026-10-24 ユーザー指示）
+        topBar = {
+            Column {
+                TopAppBar(title = { Text("設定", fontWeight = FontWeight.Bold) })
+                HeaderDivider()
+            }
+        }
     ) { pad ->
         Column(
             Modifier.fillMaxSize().padding(pad).verticalScroll(scroll).padding(16.dp),
