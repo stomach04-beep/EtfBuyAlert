@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.etfbuyalert.ui.changeColor
 import com.example.etfbuyalert.ui.kit.Fmt
 import com.example.etfbuyalert.ui.kit.InfoToggle
 import com.example.etfbuyalert.ui.kit.Panel
@@ -685,31 +686,33 @@ private fun SignalChip(text: String, filled: Boolean) {
 }
 
 // 価格の下の補足1行（12sp）：古い値の注記・前日比・場中の印。
-// 2026-10-23 表示の決まり UiKit：前日比は色を付けず ▲▼ の記号だけ（赤は危険専用・緑は良好専用）
+// 前日比は ▲▼ の記号と色（プラス＝緑・マイナス＝赤）。2026-10-23 に一度色を外したが、
+// 2026-10-24 ユーザー指示で v1.27 までの色分けに戻した（色は changeColor の1か所で決める）
 @Composable
 private fun PriceSubLine(st: EtfState) {
     // 3日超は「（◯日前の値）」を添えて、最新値と誤解させない（文言は Freshness が単一定義）
     val staleNote = Freshness.staleSuffix(st.asOf)
     val prev = st.previousClose
     val price = st.price
-    val diffText = if (prev != null && price != null) {
-        val diff = (price - prev) / prev * 100.0
-        val delta = Fmt.change(diff, 2)
+    val diff = if (prev != null && price != null) (price - prev) / prev * 100.0 else null
+    val diffText = diff?.let {
+        val delta = Fmt.change(it, 2)
         // Fmt.change は 0 のとき「変わらず」を返すので % を付けない
-        "前日比 " + if (diff == 0.0) delta else "$delta%"
-    } else null
+        "前日比 " + if (it == 0.0) delta else "$delta%"
+    }
     if (staleNote.isEmpty() && diffText == null && !st.isLive) return
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (staleNote.isNotEmpty()) {
             Text(staleNote, fontSize = 12.sp, color = Sem.fg(Tone.WARN), maxLines = 1, softWrap = false)
             Spacer(Modifier.width(6.dp))
         }
-        if (diffText != null) {
+        if (diffText != null && diff != null) {
             Text(
                 diffText,
                 fontSize = 12.sp,
                 style = TextStyle.Default.num(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // プラス＝緑・マイナス＝赤（色は changeColor の1か所で決める）
+                color = changeColor(diff),
                 maxLines = 1,
                 softWrap = false
             )

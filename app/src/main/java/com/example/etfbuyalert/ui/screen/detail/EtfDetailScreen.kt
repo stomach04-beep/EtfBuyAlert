@@ -29,6 +29,7 @@ import com.example.etfbuyalert.data.model.EtfState
 import com.example.etfbuyalert.domain.AlertEngine
 import com.example.etfbuyalert.domain.Freshness
 import com.example.etfbuyalert.domain.Money
+import com.example.etfbuyalert.ui.changeColor
 import com.example.etfbuyalert.ui.kit.Fmt
 import com.example.etfbuyalert.ui.kit.Panel
 import com.example.etfbuyalert.ui.kit.Sem
@@ -133,11 +134,12 @@ fun EtfDetailScreen(
                 Spacer(Modifier.width(8.dp))
                 if (state.previousClose != null && state.price != null && state.previousClose != 0.0) {
                     val diff = (state.price - state.previousClose) / state.previousClose * 100.0
-                    // 前日比は色を付けず ▲▼ の記号だけ（Fmt.change は 0 のとき「変わらず」なので % を付けない）
+                    // 前日比は ▲▼ の記号と色（プラス＝緑・マイナス＝赤。色は changeColor の1か所で決める）。
+                    // Fmt.change は 0 のとき「変わらず」なので % を付けない
                     val delta = Fmt.change(diff, 2)
                     Text("前日比 " + if (diff == 0.0) delta else "$delta%", fontSize = 12.sp,
                         style = TextStyle.Default.num(),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = changeColor(diff),
                         modifier = Modifier.padding(bottom = 3.dp))
                 }
             }
