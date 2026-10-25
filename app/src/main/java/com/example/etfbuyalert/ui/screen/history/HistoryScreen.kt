@@ -21,7 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.etfbuyalert.data.model.NotificationLog
-import com.example.etfbuyalert.ui.kit.HeaderDivider
+import com.example.etfbuyalert.ui.kit.TabInfoBar
 
 // ===== 通知の種類ごとの仕分け定義 =====
 // 履歴に入る category 文字列（NotificationHelper / AlertEngine / EtfRepository が書く値）を
@@ -82,24 +82,18 @@ fun HistoryScreen(
     // 選択中の絞り込み。画面回転や一時的なプロセス終了でも保持する
     var selectedKey by rememberSaveable { mutableStateOf(FILTER_ALL) }
 
-    Scaffold(
-        topBar = {
-            // 見出しの下に境目の線を1本引く（2026-10-24 ユーザー指示）
-            Column {
-                TopAppBar(
-                    title = { Text("通知履歴", fontWeight = FontWeight.Bold) },
-                    actions = {
-                        if (notifications.isNotEmpty()) {
-                            TextButton(onClick = onClear) { Text("クリア") }
-                        }
-                    }
-                )
-                HeaderDivider()
+    // 2026-10-25 APP_RULES.md A2：見出し（アプリ名）は主画面の1か所だけにしたので、
+    // TopAppBar の「通知履歴」と「クリア」はタブの先頭の細い行（TabInfoBar）へ移した
+    Column(Modifier.fillMaxSize()) {
+        TabInfoBar(
+            text = if (notifications.isEmpty()) "通知履歴" else "通知履歴 ${notifications.size}件"
+        ) {
+            if (notifications.isNotEmpty()) {
+                TextButton(onClick = onClear) { Text("クリア") }
             }
         }
-    ) { pad ->
         if (notifications.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("通知履歴はまだありません", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
@@ -111,7 +105,7 @@ fun HistoryScreen(
                 if (selected == null) notifications
                 else notifications.filter { matches(selected, it) }
 
-            Column(Modifier.fillMaxSize().padding(pad)) {
+            Column(Modifier.fillMaxSize()) {
                 // 種類が1つしかない日は絞り込む意味が無いので行ごと隠す
                 if (shownFilters.size >= 2) {
                     Row(

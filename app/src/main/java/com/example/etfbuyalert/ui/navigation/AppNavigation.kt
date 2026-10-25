@@ -1,32 +1,41 @@
 package com.example.etfbuyalert.ui.navigation
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ShowChart
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.example.etfbuyalert.MainViewModel
+import com.example.etfbuyalert.R
+import com.example.etfbuyalert.ui.kit.GearButton
+import com.example.etfbuyalert.ui.kit.ScreenHeader
+import com.example.etfbuyalert.ui.kit.ScreenTabs
 import com.example.etfbuyalert.ui.screen.detail.EtfDetailScreen
 import com.example.etfbuyalert.ui.screen.history.HistoryScreen
 import com.example.etfbuyalert.ui.screen.settings.SettingsScreen
 import com.example.etfbuyalert.ui.screen.watchlist.WatchListScreen
+import kotlinx.coroutines.launch
 
-// ボトムナビの項目
-sealed class BottomNavItem(val route: String, val label: String, val icon: ImageVector) {
-    // ShowChart は AutoMirrored 版へ移行済み（旧 Icons.Default.ShowChart は deprecated）
-    data object Watch : BottomNavItem("watch", "監視", Icons.AutoMirrored.Filled.ShowChart)
-    data object History : BottomNavItem("history", "履歴", Icons.Default.History)
-    data object Settings : BottomNavItem("settings", "設定", Icons.Default.Settings)
-}
+/**
+ * 主画面の横タブの名前（タブ名の一覧はここ1か所）。
+ * 2026-10-25 APP_RULES.md A2・A4・A5：下タブ（監視／履歴／設定）をやめ、見出しのすぐ下の横タブ2枚にした。
+ * 設定はタブにせず見出し右の歯車から開く1段深い画面（route "settings"）。
+ */
+private val MAIN_TABS = listOf("監視", "履歴")
+
+/** 画面の行き先（主画面＝横タブ2枚、詳細、設定） */
+private const val ROUTE_MAIN = "main"
+private const val ROUTE_SETTINGS = "settings"
 
 /**
  * @param openTicker          通知タップで開くよう指定された銘柄（無ければ null）。
@@ -40,8 +49,7 @@ fun AppNavigation(
     onOpenTickerHandled: () -> Unit = {},
 ) {
     val navController = rememberNavController()
-    val items = listOf(BottomNavItem.Watch, BottomNavItem.History, BottomNavItem.Settings)
-    val startRoute = BottomNavItem.Watch.route
+    val scope = rememberCoroutineScope()
 
     // 監視タブ用の状態
     val etfStates by viewModel.etfStates.collectAsStateWithLifecycle()
@@ -58,7 +66,7 @@ fun AppNavigation(
     // 詳細画面の選択期間（既定6ヶ月）
     var detailRange by remember { mutableStateOf("6mo") }
 
-    // 設定タブ用の状態
+    // 設定画面用の状態
     val notionToken by viewModel.notionToken.collectAsStateWithLifecycle()
     val notionDb by viewModel.notionDb.collectAsStateWithLifecycle()
     val intervalMin by viewModel.intervalMin.collectAsStateWithLifecycle()
@@ -70,66 +78,62 @@ fun AppNavigation(
     val notifyMorning by viewModel.notifyMorning.collectAsStateWithLifecycle()
     val notifyZoneChange by viewModel.notifyZoneChange.collectAsStateWithLifecycle()
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentRoute = navBackStackEntry?.destination?.route
-                items.forEach { item ->
-                    NavigationBarItem(
-                        icon = { Icon(item.icon, contentDescription = item.label) },
-                        label = { Text(item.label) },
-                        selected = currentRoute == item.route ||
-                            (currentRoute?.startsWith("detail") == true && item.route == BottomNavItem.Watch.route),
-                        onClick = {
-                            navController.navigate(item.route) {
-                                popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        }
-                    )
-                }
-            }
-        }
-    ) { innerPadding ->
-        // システム戻る：監視タブ以外にいるときは監視タブへ戻す（アプリを閉じない）
-        val backEntry by navController.currentBackStackEntryAsState()
-        val current = backEntry?.destination?.route
-        BackHandler(enabled = current != null && current != startRoute) {
-            navController.navigate(startRoute) {
-                popUpTo(navController.graph.startDestinationId) { saveState = true }
-                launchSingleTop = true
-                restoreState = true
-            }
-        }
+    // 横タブのページ位置（2026-10-25 APP_RULES.md A2）。NavHost の外で持つので、
+    // 詳細・設定から戻っても直前のタブのまま
+    val pager = rememberPagerState(pageCount = { MAIN_TABS.size })
 
-        // ★上の余白は入れない（bottomのみ）。
-        //   この Scaffold は topBar を持たないので innerPadding の top にはステータスバー分の
-        //   余白が入るが、各画面の TopAppBar も自前で同じ余白を足すため、両方効かせると
-        //   タイトルの上に空の帯が二重にできる。TopAppBar 側に任せる。
+    // 2026-10-25 APP_RULES.md A7：上下のシステムのバーの余白はこの Scaffold で1回だけ入れる。
+    // 中の画面は ScreenHeader（自分では余白を足さない）なので、consumeWindowInsets で二重に足さないようにする
+    Scaffold { innerPadding ->
         NavHost(
             navController,
-            startDestination = startRoute,
-            modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()),
+            startDestination = ROUTE_MAIN,
+            modifier = Modifier
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding),
         ) {
-            composable(BottomNavItem.Watch.route) {
-                WatchListScreen(
-                    etfStates = etfStates,
-                    isLoading = isLoading,
-                    lastSyncOk = lastSyncOk,
-                    lastSyncError = lastSyncError,
-                    lastSyncAt = lastSyncAt,
-                    watchTab = watchTab,
-                    onWatchTabChange = { viewModel.setWatchTab(it) },
-                    firedMethod = firedMethod,
-                    onFiredMethodChange = { viewModel.setFiredMethod(it) },
-                    onToggleBookmark = { viewModel.toggleBookmark(it) },
-                    bookmarkError = bookmarkError,
-                    onBookmarkErrorShown = { viewModel.clearBookmarkError() },
-                    onRefresh = { viewModel.refreshData() },
-                    onEtfClick = { ticker -> navController.navigate("detail/$ticker") }
-                )
+            composable(ROUTE_MAIN) {
+                // 2026-10-25 APP_RULES.md A5：履歴タブで戻るを押したら監視タブへ（監視タブでは今までどおり終了）
+                BackHandler(enabled = pager.currentPage != 0) {
+                    scope.launch { pager.animateScrollToPage(0) }
+                }
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // 2026-10-25 APP_RULES.md A2・A5：見出しはアプリ名＋歯車の1つだけ。線はタブの列の下
+                    ScreenHeader(title = stringResource(R.string.app_name), divider = false) {
+                        GearButton(onClick = {
+                            navController.navigate(ROUTE_SETTINGS) { launchSingleTop = true }
+                        })
+                    }
+                    ScreenTabs(MAIN_TABS, pager.currentPage) { i ->
+                        scope.launch { pager.animateScrollToPage(i) }
+                    }
+                    // 監視・履歴の中に横に引く操作は無い（チップの列は内側が先に動く）ので、横スワイプでもタブを移れる
+                    HorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
+                        when (page) {
+                            0 -> WatchListScreen(
+                                etfStates = etfStates,
+                                isLoading = isLoading,
+                                lastSyncOk = lastSyncOk,
+                                lastSyncError = lastSyncError,
+                                lastSyncAt = lastSyncAt,
+                                watchTab = watchTab,
+                                onWatchTabChange = { viewModel.setWatchTab(it) },
+                                firedMethod = firedMethod,
+                                onFiredMethodChange = { viewModel.setFiredMethod(it) },
+                                onToggleBookmark = { viewModel.toggleBookmark(it) },
+                                bookmarkError = bookmarkError,
+                                onBookmarkErrorShown = { viewModel.clearBookmarkError() },
+                                onRefresh = { viewModel.refreshData() },
+                                onEtfClick = { ticker -> navController.navigate("detail/$ticker") }
+                            )
+                            else -> HistoryScreen(
+                                notifications = notifications,
+                                onReload = { viewModel.reloadNotificationHistory() },
+                                onClear = { viewModel.clearNotificationHistory() }
+                            )
+                        }
+                    }
+                }
             }
             composable(
                 "detail/{ticker}",
@@ -148,14 +152,8 @@ fun AppNavigation(
                     onBack = { viewModel.clearChart(); navController.popBackStack() }
                 )
             }
-            composable(BottomNavItem.History.route) {
-                HistoryScreen(
-                    notifications = notifications,
-                    onReload = { viewModel.reloadNotificationHistory() },
-                    onClear = { viewModel.clearNotificationHistory() }
-                )
-            }
-            composable(BottomNavItem.Settings.route) {
+            composable(ROUTE_SETTINGS) {
+                // 歯車から開く1段深い画面。戻ると主画面の直前のタブへ（ページ位置は NavHost の外で保持）
                 SettingsScreen(
                     notionToken = notionToken,
                     notionDb = notionDb,
@@ -180,7 +178,8 @@ fun AppNavigation(
                     onNotifyMorningToggle = { viewModel.setNotifyMorning(it) },
                     onNotifyZoneChangeToggle = { viewModel.setNotifyZoneChange(it) },
                     onTestNotification = { viewModel.sendTestNotification() },
-                    onClearData = { viewModel.clearAllData() }
+                    onClearData = { viewModel.clearAllData() },
+                    onBack = { navController.popBackStack() }
                 )
             }
         }
