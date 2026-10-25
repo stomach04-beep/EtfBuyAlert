@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.PowerManager
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -28,10 +29,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.etfbuyalert.data.model.EtfState
 import com.example.etfbuyalert.domain.HealthCheck
-import com.example.etfbuyalert.ui.kit.HeaderDivider
+import com.example.etfbuyalert.ui.kit.ScreenHeader
 import com.example.etfbuyalert.ui.theme.ThemePrefs
 
-// 設定タブ
+// 設定画面（2026-10-25 APP_RULES.md A5：タブから外し、主画面の見出し右の歯車から開く）
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
@@ -58,7 +59,9 @@ fun SettingsScreen(
     onNotifyMorningToggle: (Boolean) -> Unit,
     onNotifyZoneChangeToggle: (Boolean) -> Unit,
     onTestNotification: () -> Unit,
-    onClearData: () -> Unit
+    onClearData: () -> Unit,
+    // 戻る矢印・端末の戻るで主画面（直前のタブ）へ戻る
+    onBack: () -> Unit
 ) {
     val ctx = LocalContext.current
     val scroll = rememberScrollState()
@@ -69,17 +72,15 @@ fun SettingsScreen(
     var tokenVisible by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
 
-    Scaffold(
-        // 見出しの下に境目の線を1本引く（2026-10-24 ユーザー指示）
-        topBar = {
-            Column {
-                TopAppBar(title = { Text("設定", fontWeight = FontWeight.Bold) })
-                HeaderDivider()
-            }
-        }
-    ) { pad ->
+    // 2026-10-25 APP_RULES.md A5：歯車から開く1段深い画面。端末の戻るでも直前のタブへ戻す
+    BackHandler { onBack() }
+
+    // 2026-10-25 APP_RULES.md A1・A5：TopAppBar をやめ ScreenHeader＋戻る矢印に（下の線は ScreenHeader が引く）。
+    // システムのバーの余白は外側（AppNavigation）の Scaffold が1回だけ入れる
+    Column(Modifier.fillMaxSize()) {
+        ScreenHeader(title = "設定", onBack = onBack)
         Column(
-            Modifier.fillMaxSize().padding(pad).verticalScroll(scroll).padding(16.dp),
+            Modifier.fillMaxWidth().weight(1f).verticalScroll(scroll).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             // ===== 監視設定の健全性チェック（F1）=====

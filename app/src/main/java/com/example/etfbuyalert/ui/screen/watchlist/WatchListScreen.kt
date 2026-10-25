@@ -36,8 +36,8 @@ import com.example.etfbuyalert.ui.changeColor
 import com.example.etfbuyalert.ui.kit.Fmt
 import com.example.etfbuyalert.ui.kit.InfoToggle
 import com.example.etfbuyalert.ui.kit.Panel
-import com.example.etfbuyalert.ui.kit.ScreenHeader
 import com.example.etfbuyalert.ui.kit.Sem
+import com.example.etfbuyalert.ui.kit.TabInfoBar
 import com.example.etfbuyalert.ui.kit.Tone
 import com.example.etfbuyalert.ui.kit.ToneChip
 import com.example.etfbuyalert.ui.kit.num
@@ -89,31 +89,24 @@ fun WatchListScreen(
     val syncText = if (lastSyncAt > 0) "最終同期 ${Fmt.dateTime(lastSyncAt)}" + (if (lastSyncOk) "" else "（失敗）")
                    else "未同期"
 
-    Scaffold(
-        topBar = {
-            // 2026-10-23 表示の決まり UiKit：TopAppBar をやめ、背景と同じ色の見出し1段に。
-            // 外側の Scaffold は上の余白を入れない作りなので、ここでステータスバー分を空ける
-            ScreenHeader(
-                title = "買い時アラート",
-                sub = syncText,
-                modifier = Modifier.statusBarsPadding()
-            ) {
-                IconButton(onClick = onRefresh, enabled = !isLoading) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = "更新",
-                        tint = if (isLoading) MaterialTheme.colorScheme.onSurfaceVariant
-                               else MaterialTheme.colorScheme.primary
-                    )
-                }
+    // 2026-10-25 APP_RULES.md A2：アプリ名の見出しは主画面（AppNavigation）の1か所に移したので、
+    // ここはタブの先頭の細い行（最終同期の時刻＋更新ボタン）にした。スナックバーは下端に重ねる
+    Box(Modifier.fillMaxSize()) {
+      Column(Modifier.fillMaxSize()) {
+        TabInfoBar(text = syncText) {
+            IconButton(onClick = onRefresh, enabled = !isLoading) {
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = "更新",
+                    tint = if (isLoading) MaterialTheme.colorScheme.onSurfaceVariant
+                           else MaterialTheme.colorScheme.primary
+                )
             }
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { pad ->
+        }
         Column(
             Modifier
-                .fillMaxSize()
-                .padding(pad)
+                .fillMaxWidth()
+                .weight(1f)
                 .padding(horizontal = 12.dp)
         ) {
             if (isLoading) {
@@ -125,7 +118,7 @@ fun WatchListScreen(
                 ErrorBanner(lastSyncError)
             }
 
-            // 最終同期時刻は見出し（ScreenHeader の sub）へ移した
+            // 最終同期時刻はタブの先頭の行（TabInfoBar）へ移した
             Spacer(Modifier.height(4.dp))
 
             if (etfStates.isEmpty()) {
@@ -209,7 +202,7 @@ fun WatchListScreen(
                                 Text(
                                     "・「押し目まで ◯%」＝押し目ラインまでの距離（並び順の基準）。下回ると色が付きます\n" +
                                     "・各ラインの右の％＝現在値がそのラインより何％上（+）か下（−）か\n" +
-                                    "・前日比は ▲上げ ▼下げ の記号だけで示します（色は付けません）\n" +
+                                    "・前日比は ▲上げ ▼下げ の記号と色で示します（＋は赤・−は青）\n" +
                                     "・赤い札は損切りライン割れ（保有中）だけに使います",
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -221,6 +214,9 @@ fun WatchListScreen(
                 }
             }
         }
+      }
+        // ブックマーク保存の失敗を知らせるスナックバー（画面の下端に重ねる）
+        SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
 
@@ -353,12 +349,11 @@ private fun FiredMethodFilterRow(
     }
 }
 
-// 種別タブ（件数付き）。FilterChipの行からタブ表示に変更（2026-07-26）。
-// 選択中は下線＋強調色でひと目で分かる。
-//
-// ★タブ追加で5タブになったため、等幅の固定TabRowは使えない（実測: 1タブ216pxのうち
-// Material3のTab内部padding 32dpを引くと120pxしか残らず「発火中」が「発火C」に切れた）。
-// 横スクロール式にして、ラベルと件数を必ず全文表示する。
+// 種別の絞り込み（件数付き）。
+// 2026-10-25 APP_RULES.md A4：横タブは主画面の1段（監視／履歴）だけにするため、ここの ScrollableTabRow を
+// 横に送れる FilterChip の列に置き換えた（7個あるので SegmentedButton でなくチップ）。
+// 並び（TABS）・既定の選択・選んだ値の保存（ViewModel の watchTab）は従来どおり。
+// ラベルと件数は1行で必ず全文表示する（切れると「発火C」のように読めなくなった前例がある）。
 @Composable
 private fun WatchTabSelector(
     states: List<EtfState>,
@@ -367,12 +362,9 @@ private fun WatchTabSelector(
 ) {
     // 保存されているキーがタブ一覧に無い場合（旧設定・廃止した「すべて」など）は先頭タブを選択扱いにする
     val selectedIndex = TABS.indexOfFirst { it.key == selected }.let { if (it >= 0) it else 0 }
-    ScrollableTabRow(
-        selectedTabIndex = selectedIndex,
-        edgePadding = 0.dp,
-        containerColor = Color.Transparent,
-        // 2026-10-23 表示の決まり UiKit：区切り線を引かない（選択中の下線だけ残す）
-        divider = {},
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         TABS.forEachIndexed { i, tab ->
             val n = states.count(tab.match)
@@ -382,25 +374,25 @@ private fun WatchTabSelector(
                              else states.count { tab.match(it) && AlertEngine.isFired(it) }
             // 発火中タブは1件以上あるとき件数を警告色にして目立たせる
             val fired = tab.key == Settings.TAB_FIRED && n > 0
-            Tab(
+            FilterChip(
                 selected = i == selectedIndex,
                 onClick = { onChange(tab.key) },
-                text = {
-                    // 上段=種別名だけ、下段=件数＋そのタブ内の発火中件数（2行構成）。
-                    // 等幅タブは1枠が狭いので、数字を上段に混ぜると折り返して縦に割れる。
-                    // そのため softWrap=false / maxLines=1 で必ず1行に収める。
+                label = {
+                    // 種別名＋件数＋そのタブ内の発火中件数を1行に並べる。
+                    // softWrap=false / maxLines=1 で折り返さない（チップの列は横に送れるので幅は足りる）
                     val isBookmarkTab = tab.key == Settings.TAB_BOOKMARK
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             tab.label,
-                            // ★（ブックマーク）タブは記号1文字なので少し大きめ＋金色にして
+                            // ★（ブックマーク）タブは記号1文字なので少し大きめにして
                             // カード右上のブックマークアイコンと色を揃える
-                            fontSize = if (isBookmarkTab) 17.sp else 14.sp,
+                            fontSize = if (isBookmarkTab) 16.sp else 13.sp,
                             color = if (isBookmarkTab) bookmarkColor() else Color.Unspecified,
                             fontWeight = if (i == selectedIndex) FontWeight.Bold else FontWeight.Normal,
                             maxLines = 1,
                             softWrap = false
                         )
+                        Spacer(Modifier.width(4.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 "$n",
@@ -462,7 +454,7 @@ private fun EmptyState() {
         Text("監視中の銘柄がありません", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         Spacer(Modifier.height(8.dp))
         Text(
-            "「設定」タブでNotionトークンを入力し、\n更新ボタンを押すと、Notionの\n「アプリ監視」ON銘柄が表示されます。",
+            "右上の歯車（設定）でNotionトークンを入力し、\n更新ボタンを押すと、Notionの\n「アプリ監視」ON銘柄が表示されます。",
             fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -686,8 +678,7 @@ private fun SignalChip(text: String, filled: Boolean) {
 }
 
 // 価格の下の補足1行（12sp）：古い値の注記・前日比・場中の印。
-// 前日比は ▲▼ の記号と色（プラス＝緑・マイナス＝赤）。2026-10-23 に一度色を外したが、
-// 2026-10-24 ユーザー指示で v1.27 までの色分けに戻した（色は changeColor の1か所で決める）
+// 前日比は ▲▼ の記号と色（2026-10-25 APP_RULES.md B3：＋＝赤・−＝青。色は changeColor の1か所で決める）
 @Composable
 private fun PriceSubLine(st: EtfState) {
     // 3日超は「（◯日前の値）」を添えて、最新値と誤解させない（文言は Freshness が単一定義）
@@ -711,7 +702,7 @@ private fun PriceSubLine(st: EtfState) {
                 diffText,
                 fontSize = 12.sp,
                 style = TextStyle.Default.num(),
-                // プラス＝緑・マイナス＝赤（色は changeColor の1か所で決める）
+                // ＋＝赤・−＝青（色は changeColor の1か所で決める）
                 color = changeColor(diff),
                 maxLines = 1,
                 softWrap = false

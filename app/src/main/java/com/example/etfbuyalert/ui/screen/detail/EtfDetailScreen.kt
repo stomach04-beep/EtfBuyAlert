@@ -5,8 +5,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,8 +29,8 @@ import com.example.etfbuyalert.domain.Freshness
 import com.example.etfbuyalert.domain.Money
 import com.example.etfbuyalert.ui.changeColor
 import com.example.etfbuyalert.ui.kit.Fmt
-import com.example.etfbuyalert.ui.kit.HeaderDivider
 import com.example.etfbuyalert.ui.kit.Panel
+import com.example.etfbuyalert.ui.kit.ScreenHeader
 import com.example.etfbuyalert.ui.kit.Sem
 import com.example.etfbuyalert.ui.kit.Tone
 import com.example.etfbuyalert.ui.kit.num
@@ -85,37 +83,12 @@ fun EtfDetailScreen(
 
     val colors = lineColors()
 
-    Scaffold(
-        topBar = {
-            // 2026-10-23 表示の決まり UiKit：見出しは背景と同じ色の1段（色の帯にしない）。
-            // タイトルは1行に収める（長いと2行に折り返して時計の直下へ押し上げられる）
-            // 見出しの下に境目の線を1本引く（2026-10-24 ユーザー指示）
-            Column {
-                TopAppBar(
-                    title = {
-                        Text(
-                            "${state.ticker} チャート",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background
-                    )
-                )
-                HeaderDivider()
-            }
-        }
-    ) { pad ->
+    // 2026-10-25 APP_RULES.md A1：TopAppBar をやめ ScreenHeader＋戻る矢印に（1行・下の線は ScreenHeader が引く）。
+    // システムのバーの余白は外側（AppNavigation）の Scaffold が1回だけ入れる
+    Column(Modifier.fillMaxSize()) {
+        ScreenHeader(title = "${state.ticker} チャート", onBack = onBack)
         Column(
-            Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(12.dp),
+            Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // 銘柄名・現在値
@@ -139,7 +112,7 @@ fun EtfDetailScreen(
                 Spacer(Modifier.width(8.dp))
                 if (state.previousClose != null && state.price != null && state.previousClose != 0.0) {
                     val diff = (state.price - state.previousClose) / state.previousClose * 100.0
-                    // 前日比は ▲▼ の記号と色（プラス＝緑・マイナス＝赤。色は changeColor の1か所で決める）。
+                    // 前日比は ▲▼ の記号と色（＋＝赤・−＝青。2026-10-25 APP_RULES.md B3。色は changeColor の1か所で決める）。
                     // Fmt.change は 0 のとき「変わらず」なので % を付けない
                     val delta = Fmt.change(diff, 2)
                     Text("前日比 " + if (diff == 0.0) delta else "$delta%", fontSize = 12.sp,
