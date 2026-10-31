@@ -18,6 +18,9 @@ import androidx.navigation.navArgument
 import com.example.etfbuyalert.MainViewModel
 import com.example.etfbuyalert.R
 import com.example.etfbuyalert.ui.kit.GearButton
+import com.example.etfbuyalert.ui.kit.HeaderAppIcon
+import com.example.etfbuyalert.ui.kit.HeaderBackdrop
+import androidx.compose.ui.res.painterResource
 import com.example.etfbuyalert.ui.kit.ScreenHeader
 import com.example.etfbuyalert.ui.kit.ScreenTabs
 import com.example.etfbuyalert.ui.screen.detail.EtfDetailScreen
@@ -99,13 +102,22 @@ fun AppNavigation(
                 }
                 Column(modifier = Modifier.fillMaxSize()) {
                     // 2026-10-25 APP_RULES.md A2・A5：見出しはアプリ名＋歯車の1つだけ。線はタブの列の下
-                    ScreenHeader(title = stringResource(R.string.app_name), divider = false) {
-                        GearButton(onClick = {
-                            navController.navigate(ROUTE_SETTINGS) { launchSingleTop = true }
-                        })
-                    }
-                    ScreenTabs(MAIN_TABS, pager.currentPage) { i ->
-                        scope.launch { pager.animateScrollToPage(i) }
+                    // 見出しとタブの後ろに Gemini で描いた絵を敷く（2026-11-01 案3-3）
+                    HeaderBackdrop(art = painterResource(R.drawable.header_backdrop)) {
+                        ScreenHeader(
+                            title = stringResource(R.string.app_name),
+                            divider = false,
+                            // 名前の左にアプリアイコン。絵の上に置くので見出し自身の背景は塗らない
+                            leading = { HeaderAppIcon(painterResource(R.mipmap.ic_launcher)) },
+                            transparent = true,
+                        ) {
+                            GearButton(onClick = {
+                                navController.navigate(ROUTE_SETTINGS) { launchSingleTop = true }
+                            })
+                        }
+                        ScreenTabs(MAIN_TABS, pager.currentPage, transparent = true) { i ->
+                            scope.launch { pager.animateScrollToPage(i) }
+                        }
                     }
                     // 監視・履歴の中に横に引く操作は無い（チップの列は内側が先に動く）ので、横スワイプでもタブを移れる
                     HorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
