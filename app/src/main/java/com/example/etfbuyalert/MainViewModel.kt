@@ -18,6 +18,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 
+// ★の保存に失敗したときの画面下の知らせの文（画面だけの文。通知には使わない）。
+// 2026-11-12 v1.35：知らせは1行で切る決まり（APP_RULES H6）になったので、前の38字の文を1行に収まる長さへ縮めた。
+// デバッグ版の見本の画面も同じ文を使う（文を2か所に書かない）
+// 実機（SM-S931Q）で1行に入るのは約18字まで（21字の文は「通信・トー…」で切れた）
+// 見た目の点検役の講評で「次の一手（何を確かめるか）」を文に入れた（UI_REFERENCE 31章）
+const val BOOKMARK_SAVE_FAILED = "★を保存できず（通信・トークン確認）"
+
 // 画面に渡す状態をまとめて保持するViewModel。
 // バックグラウンドWorkerが書いたJSONを reloadFromDisk() で読み直して反映する。
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -64,7 +71,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             val result = repo.toggleBookmark(ticker)
             if (result == null) {
-                _bookmarkError.value = "ブックマークをNotionに保存できませんでした（通信・トークンを確認してください）"
+                _bookmarkError.value = BOOKMARK_SAVE_FAILED
             } else {
                 val data = repo.load()
                 _etfStates.value = data.etfStates.sortedBy { it.ticker }
