@@ -22,7 +22,8 @@ import java.io.File
 // 2026-11-12 v1.35：知らせは1行で切る決まり（APP_RULES H6）になったので、前の38字の文を1行に収まる長さへ縮めた。
 // デバッグ版の見本の画面も同じ文を使う（文を2か所に書かない）
 // 実機（SM-S931Q）で1行に入るのは約18字まで（21字の文は「通信・トー…」で切れた）
-const val BOOKMARK_SAVE_FAILED = "★の保存に失敗（通信・トークン）"
+// 見た目の点検役の講評で「次の一手（何を確かめるか）」を文に入れた（UI_REFERENCE 31章）
+const val BOOKMARK_SAVE_FAILED = "★を保存できず（通信・トークン確認）"
 
 // 画面に渡す状態をまとめて保持するViewModel。
 // バックグラウンドWorkerが書いたJSONを reloadFromDisk() で読み直して反映する。
