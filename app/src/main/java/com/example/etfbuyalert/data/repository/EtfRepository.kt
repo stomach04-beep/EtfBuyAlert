@@ -12,6 +12,7 @@ import com.example.etfbuyalert.domain.AlertEngine
 import com.example.etfbuyalert.domain.AssetKind
 import com.example.etfbuyalert.domain.EtfCategory
 import com.example.etfbuyalert.domain.HealthCheck
+import com.example.etfbuyalert.domain.Holding
 import com.example.etfbuyalert.domain.MarketHours
 import com.example.etfbuyalert.domain.Symbol
 import com.example.etfbuyalert.domain.Ma200Lines
@@ -243,6 +244,10 @@ class EtfRepository(private val context: Context) {
         appendLog(data, type, success = fetchOk, message = logMessage)
         storage.save(data)
 
+        // 生存の印（v1.34）：判定・通知・保存まで済んだ回だけ書く。
+        // 価格が1件も取れなかった回は書かない＝外の見張り（5時間）が止まりに気づける。
+        writeHeartbeatIfOk(fetchOk && data.lastSyncOk)
+
         // 6) ホーム画面ウィジェットを描き直す（保存の後＝必ず最新のJSONを読む）。
         // ウィジェット側の失敗で同期を落とさないよう、例外はProvider内で握りつぶしている。
         EtfWidgetProvider.refresh(context)
@@ -389,6 +394,20 @@ class EtfRepository(private val context: Context) {
             sellTrailArmed = false, sellMa50Armed = false,
         ) else st
 
+    // 同期で見つけた生存監視の行（_APP_HEARTBEAT）のページID。同期に失敗した回は前回の値のまま
+    @Volatile private var heartbeatPageId: String? = null
+
+    // 生存の印を Notion の「アプリ最終同期」へ書く。runUpdate の最後（保存の後）からだけ呼ぶ
+    private fun writeHeartbeatIfOk(ok: Boolean) {
+        val pageId = heartbeatPageId ?: return
+        if (!ok) {
+            Log.w(TAG, "価格取得かNotion同期が失敗した回なので生存の印は書かない")
+            return
+        }
+        val hbOk = NotionClient.updateHeartbeat(Settings.notionToken(context), pageId)
+        if (!hbOk) Log.w(TAG, "ハートビート書き込みに失敗（監視動作は継続）")
+    }
+
     // pending: 同期中に気づいたアラート（ニュース警告の新規・変化）を積む先。
     // 呼び出し元 update() が価格アラートと合わせて最後にまとめて通知する。
     private fun syncConfigs(data: AppData, pending: MutableList<NotificationHelper.AlertItem>) {
@@ -404,12 +423,17 @@ class EtfRepository(private val context: Context) {
         // 生存監視用の特別行を先に抜き取る（銘柄ではないので価格取得も通知も監視一覧入りもしない）。
         // 同期が成功したこの瞬間だけ「アプリ最終同期」に現在時刻を書き、外部の見張りジョブが
         // アプリの停止（Doze・電池最適化・force-stop・トークン失効）に気づけるようにする。
+        // v1.34: 書くのはここでなく runUpdate の保存の後（writeHeartbeatIfOk）。
+        // 価格取得の前に書くと、取得が詰まって途中で止められた回でも外からは「元気」に見えた。
         val heartbeatRow = res.items.find { it.ticker == NotionClient.HEARTBEAT_TICKER }
-        if (heartbeatRow != null) {
-            val hbOk = NotionClient.updateHeartbeat(token, heartbeatRow.pageId)
-            if (!hbOk) Log.w(TAG, "ハートビート書き込みに失敗（監視動作は継続）")
+        heartbeatPageId = heartbeatRow?.pageId
+        // 見送り・資料の行は監視から外す（v1.34。買わないと決めた行の押し目到達は雑音）。
+        // アプリ監視 ON のまま残っている行は PC 側の line-audit が「F矛盾」として毎月知らせる。
+        val silenced = res.items.count { Holding.isSilenced(it.selectionStatus) }
+        if (silenced > 0) Log.i(TAG, "見送り・資料の${silenced}行は監視しない")
+        val items = res.items.filter {
+            it.ticker != NotionClient.HEARTBEAT_TICKER && !Holding.isSilenced(it.selectionStatus)
         }
-        val items = res.items.filter { it.ticker != NotionClient.HEARTBEAT_TICKER }
 
         val merged = items.map { n ->
             // Notionのティッカー表記はゆれている（ETFは"1540.T"、ADP型日本株は"1925"）ので、

@@ -1,6 +1,7 @@
 package com.example.etfbuyalert.data.network
 
 import android.util.Log
+import com.example.etfbuyalert.domain.Holding
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import okhttp3.MediaType.Companion.toMediaType
@@ -56,7 +57,8 @@ object NotionClient {
         val deepDipPrice: Double?,
         val breakoutPrice: Double?,
         val stopLossPrice: Double?,
-        val purchased: Boolean,
+        val purchased: Boolean,   // 保有中か（購入日あり または 選定ステータス=保有中。判定は Holding.isHeld）
+        val selectionStatus: String?, // 「選定ステータス」セレクト列（実弾/プール/保有中/見送り/資料/要仕分け）
         val category: String?,  // 任意の「カテゴリ」セレクト列（無ければnull→業種→アプリ内対応表の順で補完）
         val sector: String?,    // 「業種」セレクト列（化学/医薬品/機械/サービス 等）。個別株はこちらが入る
         val lineMethod: String?, // 「ライン計算方式」セレクト列（ADP型 / MA200 / 手動）＝ラインの持ち主
@@ -296,6 +298,8 @@ object NotionClient {
                 if (ticker.isBlank()) continue  // ティッカー無しは監視できない
                 val name = title(props, "銘柄名").ifBlank { ticker }
                 val market = selectName(props, "市場")
+                // 選定ステータス（v1.34）。保有の判定と、見送り・資料の除外に使う
+                val status = selectName(props, Holding.PROP_STATUS)
                 list.add(
                     NotionEtf(
                         pageId = pageId,
@@ -306,7 +310,9 @@ object NotionClient {
                         deepDipPrice = number(props, "買い増し価格(深押し)"),
                         breakoutPrice = number(props, "順張り価格(上抜け)"),
                         stopLossPrice = number(props, "損切り価格"),
-                        purchased = dateNotNull(props, "購入日"),
+                        // 購入日が空でも選定ステータスが保有中なら保有とみなす（v1.34。19行が黙っていた）
+                        purchased = Holding.isHeld(dateNotNull(props, "購入日"), status),
+                        selectionStatus = status,
                         // 「カテゴリ」列は現状このDBに存在しない（＝常にnull）。将来ユーザーが
                         // 手動分類用に足したときに効くよう残してある。実際の分類は業種→対応表で補完する。
                         category = selectName(props, "カテゴリ"),
