@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.etfbuyalert.ui.changeColor
+import com.example.etfbuyalert.ui.kit.AppSnackbarHost
 import com.example.etfbuyalert.ui.kit.Fmt
 import com.example.etfbuyalert.ui.kit.InfoToggle
 import com.example.etfbuyalert.ui.kit.Panel
@@ -216,7 +217,11 @@ fun WatchListScreen(
         }
       }
         // ブックマーク保存の失敗を知らせるスナックバー（画面の下端に重ねる）
-        SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
+        // 2026-11-12 v1.35：素の SnackbarHost（明るい表示で薄紫に浮く）をやめ、共通の AppSnackbarHost にそろえた
+        // （本文色の帯・文は1行＝APP_RULES H6）。AppSnackbarHost は位置の引数を持たないので Box で下端に置く
+        Box(Modifier.align(Alignment.BottomCenter)) {
+            AppSnackbarHost(snackbarHostState)
+        }
     }
 }
 
