@@ -96,6 +96,19 @@ object Settings {
     fun notifyMorning(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_NOTIFY_MORNING, true)
     fun notifyZoneChange(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_NOTIFY_ZONE, true)
 
+    // --- 通知グループごとのオンオフ（v1.36。グループの判定は domain.NotifyGroup）---
+    // 「オフにしたグループ名」を持つ（オンの一覧を持つと、新しいグループが既定オフになってしまう）。
+    // 端末内に置く＝Notion同期に失敗した回でも設定が効く。
+    const val KEY_MUTED_GROUPS = "muted_notify_groups"
+    fun mutedGroups(ctx: Context): Set<String> =
+        prefs(ctx).getStringSet(KEY_MUTED_GROUPS, emptySet())?.toSet() ?: emptySet()
+    fun setGroupMuted(ctx: Context, group: String, muted: Boolean) {
+        // getStringSet の戻り値は直接書き換えてはいけない（Android の決まり）ので写してから直す
+        val next = mutedGroups(ctx).toMutableSet()
+        if (muted) next.add(group) else next.remove(group)
+        prefs(ctx).edit().putStringSet(KEY_MUTED_GROUPS, next).apply()
+    }
+
     // --- 監視設定の健全性チェック（F1）---
     // 「保有中なのに損切りラインが空」「ラインが1本も無い」＝その銘柄だけ静かに監視されない
     // 状態を週1回だけ通知する（設定画面のバナーは常時表示）。ここは最後に通知した時刻だけを持つ。

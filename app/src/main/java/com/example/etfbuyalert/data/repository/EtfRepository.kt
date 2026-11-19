@@ -18,6 +18,7 @@ import com.example.etfbuyalert.domain.Symbol
 import com.example.etfbuyalert.domain.Ma200Lines
 import com.example.etfbuyalert.domain.MorningSummary
 import com.example.etfbuyalert.domain.NewsWarning
+import com.example.etfbuyalert.domain.NotifyGroup
 import com.example.etfbuyalert.domain.SellRules
 import com.example.etfbuyalert.domain.WeeklyRsi
 import com.example.etfbuyalert.widget.EtfWidgetProvider
@@ -124,8 +125,11 @@ class EtfRepository(private val context: Context) {
         // ニュース警告（同期時に検知）もここに積み、価格アラートと同じまとめ通知に入れる。
         val pending = ArrayList<NotificationHelper.AlertItem>()
 
+        // 通知グループごとのオンオフ（v1.36）。1回の同期の中では同じ値を使う
+        val muted = Settings.mutedGroups(context)
+
         // 1) Notion同期（best-effort：失敗してもキャッシュのstatesで続行）
-        syncConfigs(data, pending)
+        syncConfigs(data, pending, muted)
 
         // 2) 各銘柄の価格を取得して買い時判定
         val toggles = AlertEngine.Toggles(
@@ -161,6 +165,8 @@ class EtfRepository(private val context: Context) {
                 skipCount++
                 val (kept, keptAlerts) = AlertEngine.evaluate(st, toggles, now)
                 for (a in keptAlerts) {
+                    // 判定は済ませ（到達済みの印は進む）、オフのグループは鳴らす手前で落とす（v1.36）
+                    if (!NotifyGroup.shouldNotify(kept, a.category, muted)) continue
                     pending.add(NotificationHelper.AlertItem(a.category, a.title, a.message, st.ticker))
                 }
                 updated.add(kept)
@@ -206,6 +212,8 @@ class EtfRepository(private val context: Context) {
             val (newState, alerts) = AlertEngine.evaluate(s, toggles, now)
             s = newState
             for (a in alerts) {
+                // オフのグループは鳴らす手前で落とす（守りの通知は NotifyGroup が必ず通す）
+                if (!NotifyGroup.shouldNotify(s, a.category, muted)) continue
                 // ティッカーを添える＝1件通知をタップしたとき詳細画面へ直行できる（F2）
                 pending.add(NotificationHelper.AlertItem(a.category, a.title, a.message, s.ticker))
             }
@@ -410,7 +418,12 @@ class EtfRepository(private val context: Context) {
 
     // pending: 同期中に気づいたアラート（ニュース警告の新規・変化）を積む先。
     // 呼び出し元 update() が価格アラートと合わせて最後にまとめて通知する。
-    private fun syncConfigs(data: AppData, pending: MutableList<NotificationHelper.AlertItem>) {
+    // muted: 設定でオフにした通知グループ（v1.36）。新規追加・出遅れ・ニュース警告の通知もこれで絞る。
+    private fun syncConfigs(
+        data: AppData,
+        pending: MutableList<NotificationHelper.AlertItem>,
+        muted: Set<String> = emptySet()
+    ) {
         val token = Settings.notionToken(context)
         val db = Settings.notionDbId(context)
         val res = NotionClient.fetchWatchedEtfs(token, db)
@@ -454,6 +467,11 @@ class EtfRepository(private val context: Context) {
                     ?: EtfCategory.of(ticker),
                 sector = n.sector,
                 lineMethod = n.lineMethod,
+                // 通知グループの材料（v1.36）。Notionの生の値だけを持ち、判定は NotifyGroup.of
+                notifyGroupRaw = n.notifyGroupRaw,
+                tags = n.tags,
+                favoritePage = n.favoritePage,
+                purpose = n.purpose,
                 // ライン計算方式=MA200 の行は、端末内で計算した値を優先する。
                 // 通常は書き戻し済みでNotionと同値だが、書き戻しが失敗した回や、
                 // 移行直後にNotionへまだ反映されていない間は、Notion側が古い。
@@ -515,7 +533,8 @@ class EtfRepository(private val context: Context) {
                 .filter { it.lineMethod == AssetKind.METHOD_RTX }
                 .map { it.pageId }.toSet()
             val newRtx = merged.filter {
-                it.lineMethod == AssetKind.METHOD_RTX && it.pageId !in prevRtxIds
+                it.lineMethod == AssetKind.METHOD_RTX && it.pageId !in prevRtxIds &&
+                        NotifyGroup.shouldNotify(it, "急落優良", muted)   // オフのグループは鳴らさない
             }
             if (newRtx.isNotEmpty()) {
                 // 銘柄名＋記号の組み立ては Symbol.label に集約（名前に既に記号が入っていても二重にしない）
@@ -535,7 +554,8 @@ class EtfRepository(private val context: Context) {
                 .filter { it.lineMethod == AssetKind.METHOD_PICKAXE }
                 .map { it.pageId }.toSet()
             val newPickaxe = merged.filter {
-                it.lineMethod == AssetKind.METHOD_PICKAXE && it.pageId !in prevPickaxeIds
+                it.lineMethod == AssetKind.METHOD_PICKAXE && it.pageId !in prevPickaxeIds &&
+                        NotifyGroup.shouldNotify(it, "つるはし", muted)   // オフのグループは鳴らさない
             }
             if (newPickaxe.isNotEmpty()) {
                 // カタログ一括同期の直後は数十件まとめて増えるので、多いときは件数だけに要約する
@@ -560,7 +580,8 @@ class EtfRepository(private val context: Context) {
                 .filter { it.pickaxeLagging }.map { it.pageId }.toSet()
             val newLagging = merged.filter {
                 it.lineMethod == AssetKind.METHOD_PICKAXE &&
-                        it.pickaxeLagging && it.pageId !in prevLagging
+                        it.pickaxeLagging && it.pageId !in prevLagging &&
+                        NotifyGroup.shouldNotify(it, "つるはし", muted)   // オフのグループは鳴らさない
             }
             if (newLagging.isNotEmpty()) {
                 val body = newLagging.joinToString("\n") { "・${Symbol.label(it.name, it.ticker)}" } +
@@ -585,6 +606,8 @@ class EtfRepository(private val context: Context) {
                 if (sig.isEmpty()) continue  // 【要注意】無し（該当なし・参考のみ）は通知しない
                 val prevSig = NewsWarning.criticalPart(prevByPage[m.pageId]?.newsWarning)
                 if (sig == prevSig) continue // 内容が前回と同じなら鳴らさない
+                // オフのグループは鳴らさない（保有中の行の警告は守りとして NotifyGroup が通す）
+                if (!NotifyGroup.shouldNotify(m, "ニュース警告", muted)) continue
                 pending.add(NotificationHelper.AlertItem(
                     category = "ニュース警告",
                     // Notionの銘柄名に既にティッカーが入っている行があるため Symbol.label で二重表示を防ぐ
@@ -640,8 +663,22 @@ class EtfRepository(private val context: Context) {
      * ティッカーが若い先頭しか読めなくなっていた（v1.23で要約形式へ変更）。
      */
     private fun sendMorningSummary(data: AppData) {
-        val summary = MorningSummary.build(data.etfStates, System.currentTimeMillis()) ?: return
-        NotificationHelper.sendMorningSummary(context, summary.title, summary.body)
+        // 通知オフのグループの銘柄（保有中は除く）はサマリからも外す（v1.36）。
+        // ただし消したことを忘れないよう「通知オフ中 N銘柄」を最後に1行だけ残す（戻し忘れ対策）。
+        val muted = Settings.mutedGroups(context)
+        val (silent, shown) = data.etfStates.partition { NotifyGroup.isMuted(it, muted) }
+        // 実際に外した銘柄のグループ名だけを並べる（保有中しか無いグループ・0件のグループは出さない）
+        val silentLine = if (silent.isEmpty()) null else
+            "🔕 通知オフ中のグループ: ${silent.map { NotifyGroup.of(it) }.distinct().sorted().joinToString("・")}" +
+                    "（${silent.size}銘柄）"
+        val summary = MorningSummary.build(shown, System.currentTimeMillis())
+        if (summary == null) {
+            // 全部オフ（かつ保有0件）でも、戻し忘れに気づけるよう「オフ中」の1行だけは毎朝送る
+            silentLine?.let { NotificationHelper.sendMorningSummary(context, "☀ 朝サマリ（全グループ通知オフ中）", it) }
+            return
+        }
+        val body = if (silentLine == null) summary.body else summary.body + "\n" + silentLine
+        NotificationHelper.sendMorningSummary(context, summary.title, body)
     }
 
     // 更新ログを追記（直近50件だけ残す）

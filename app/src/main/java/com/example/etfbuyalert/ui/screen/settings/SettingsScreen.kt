@@ -28,7 +28,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.etfbuyalert.data.model.EtfState
+import com.example.etfbuyalert.data.repository.Settings
 import com.example.etfbuyalert.domain.HealthCheck
+import com.example.etfbuyalert.domain.NotifyGroup
 import com.example.etfbuyalert.ui.kit.ScreenHeader
 import com.example.etfbuyalert.ui.theme.ThemePrefs
 
@@ -175,6 +177,9 @@ fun SettingsScreen(
                 }
             }
 
+            // ===== グループ別の通知（v1.36）=====
+            NotifyGroupSection(etfStates)
+
             // ===== テーマ =====
             Section("テーマ") {
                 var mode by remember { mutableStateOf(ThemePrefs.get(ctx)) }
@@ -318,6 +323,44 @@ private fun BatteryOptimizationSection() {
                     } catch (_: Exception) { }
                 }
             }) { Text("電池最適化から除外する") }
+        }
+    }
+}
+
+/**
+ * 通知グループごとのオンオフ（v1.36）。
+ *
+ * 一覧は監視中の銘柄から毎回作る（NotifyGroup.countsOf）＝語彙をここに固定で持たない。
+ * Notionの「通知グループ」列に新しい名前を入れれば、次の同期で自動的にスイッチが増える（既定オン）。
+ * 保存は Settings（端末内）に直接書く。判定は通知の全出口で NotifyGroup.shouldNotify が読む。
+ */
+@Composable
+private fun NotifyGroupSection(states: List<EtfState>) {
+    val ctx = LocalContext.current
+    // 監視0件（初回・全消去後）は並べるものが無い
+    if (states.isEmpty()) return
+    val counts = remember(states) { NotifyGroup.countsOf(states) }
+    var muted by remember { mutableStateOf(Settings.mutedGroups(ctx)) }
+    Section("グループ別の通知") {
+        Text(
+            "銘柄の型（タグ）ごとに通知を止められます。オフでもライン到達の判定は続け、" +
+                "一覧の表示も変わりません。保有中の銘柄の損切り・売り時・過熱利確・ニュース警告はオフでも鳴ります。" +
+                "グループはNotionの「通知グループ」列で手で付け替えられます（空なら自動で決まります）。",
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        // オフのまま該当0件になったグループも末尾に残す（消えるとオンに戻せず、
+        // 次に新しい行が登録されたときの知らせが黙って落ちる）
+        val zero = muted.filter { m -> counts.none { it.first == m } }.sorted().map { it to 0 }
+        (counts + zero).forEach { (group, n) ->
+            ToggleRow(
+                title = "$group（${n}銘柄）",
+                subtitle = NotifyGroup.describe(group),
+                checked = group !in muted,
+                onToggle = { on ->
+                    Settings.setGroupMuted(ctx, group, muted = !on)
+                    muted = Settings.mutedGroups(ctx)   // 保存した値を読み直して画面とずらさない
+                }
+            )
         }
     }
 }
