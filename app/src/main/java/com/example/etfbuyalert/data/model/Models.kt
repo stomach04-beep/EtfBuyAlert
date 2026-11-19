@@ -23,6 +23,13 @@ data class EtfState(
     //   （個別株をMA200方式で監視するとETFタブに出る不具合があった。2026-08-11修正）。
     val lineMethod: String? = null,
 
+    // --- 通知グループの材料（v1.36。判定は domain.NotifyGroup.of が単一の真実の源）---
+    // ここには Notion の生の値だけを入れ、導いたグループ名は保存しない（保存すると判定とズレる）。
+    val notifyGroupRaw: String? = null,  // Notion「通知グループ」列（手で付けた上書き。空なら自動判定）
+    val tags: List<String>? = null,      // Notion「タグ」列（複数選択）。旧JSONではnullになるので必ず orEmpty で読む
+    val favoritePage: String? = null,    // Notion「お気に入りページ」列（楽天iSPEEDのページ割当）
+    val purpose: String? = null,         // Notion「投資目的」列（配当成長 / 別枠 / 対象外）
+
     // --- Notionから同期した買い時ライン（通貨は銘柄による。円建てなら円）---
     val dipPrice: Double? = null,        // 買い時価格(押し目)  … 下抜けで通知
     val deepDipPrice: Double? = null,    // 買い増し価格(深押し) … 下抜けで通知

@@ -49,6 +49,7 @@ import com.example.etfbuyalert.domain.AssetKind
 import com.example.etfbuyalert.domain.Freshness
 import com.example.etfbuyalert.domain.Money
 import com.example.etfbuyalert.domain.NewsWarning
+import com.example.etfbuyalert.domain.NotifyGroup
 import com.example.etfbuyalert.domain.Symbol
 import com.example.etfbuyalert.domain.WatchRanking
 
@@ -505,13 +506,23 @@ private fun EtfCard(
                             ToneChip("出遅れ", Tone.INFO)
                         }
                     }
-                    Text(
-                        st.name,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    // 2段目＝通知グループの札＋銘柄名（v1.36）。札をティッカーの段に置くと
+                    // 「5文字ティッカー＋種別＋出遅れ＋グループ」で右端が黙って切れる（APP_RULES 3-b G3）ので、
+                    // 名前の段の先頭に置き、名前のほうを weight で縮める。
+                    // 判定は NotifyGroup.of が単一の真実の源。良し悪しではない分類なので色の無い札
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Notionで手入力した長い名前でも段を壊さないよう8文字で切る
+                        ToneChip(NotifyGroup.of(st).take(8), Tone.NORMAL)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            st.name,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
                 ZoneBadge(zone)
                 // ブックマークの切替（押すと即保存され、★タブの対象になる）。押す場所は既定の48dp

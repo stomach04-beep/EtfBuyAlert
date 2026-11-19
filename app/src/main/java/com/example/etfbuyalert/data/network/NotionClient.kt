@@ -42,6 +42,9 @@ object NotionClient {
     // 売りルール除外列（売り時点灯の対象から外す逃し弁）。列が未新設でもfalse扱いで安全。
     const val PROP_SELL_EXCLUDE = "売りルール除外"
 
+    // 通知グループ列（v1.36。空なら NotifyGroup が他の列から自動で決める）
+    const val PROP_NOTIFY_GROUP = "通知グループ"
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
@@ -66,7 +69,12 @@ object NotionClient {
         val bookmarked: Boolean, // 「ブックマーク」checkbox列。方針を定めた銘柄の印（★タブ）
         val newsWarning: String?, // 「ニュース警告」rich_text列。PC側ジョブが書く下落理由の警告文
         val sellExcluded: Boolean, // 「売りルール除外」checkbox列。ONなら売り時点灯の対象外
-        val pickaxeLagging: Boolean // 「出遅れ候補」checkbox列。pickaxe-radarが毎日更新（候補提示）
+        val pickaxeLagging: Boolean, // 「出遅れ候補」checkbox列。pickaxe-radarが毎日更新（候補提示）
+        // 通知グループの材料（v1.36。判定は domain.NotifyGroup）。列が無いDBでも null／空になるだけ
+        val notifyGroupRaw: String? = null, // 「通知グループ」セレクト列（手で付けた上書き）
+        val tags: List<String> = emptyList(), // 「タグ」複数選択列
+        val favoritePage: String? = null,   // 「お気に入りページ」セレクト列
+        val purpose: String? = null         // 「投資目的」セレクト列
     )
 
     // 同期結果（成功/失敗とメッセージを呼び出し側へ返す）
@@ -327,7 +335,12 @@ object NotionClient {
                         // ニュース警告。列が未新設・空のDBでも空文字→nullになるだけ（クラッシュしない）
                         newsWarning = richText(props, PROP_NEWS_WARN).takeIf { it.isNotBlank() },
                         // 売りルール除外。列が未新設でもfalse＝監視対象のまま（安全側）
-                        sellExcluded = checkbox(props, PROP_SELL_EXCLUDE)
+                        sellExcluded = checkbox(props, PROP_SELL_EXCLUDE),
+                        // 通知グループの材料（v1.36）。どの列も未新設なら null／空＝自動判定へ倒れる
+                        notifyGroupRaw = selectName(props, PROP_NOTIFY_GROUP),
+                        tags = multiSelectNames(props, "タグ"),
+                        favoritePage = selectName(props, "お気に入りページ"),
+                        purpose = selectName(props, "投資目的")
                     )
                 )
             }
@@ -368,6 +381,17 @@ object NotionClient {
         val p = prop(props, name) ?: return null
         val sel = p.get("select")?.takeIf { it.isJsonObject }?.asJsonObject ?: return null
         return sel.get("name")?.takeIf { !it.isJsonNull }?.asString
+    }
+
+    // 複数選択列の選択肢名の一覧。列が無い・空・形が想定外でも例外を投げず空リストを返す
+    // （parse は全体が1つの try なので、ここで投げると以降の行が黙って消える）
+    private fun multiSelectNames(props: JsonObject, name: String): List<String> {
+        val p = prop(props, name) ?: return emptyList()
+        val arr = p.get("multi_select")?.takeIf { it.isJsonArray }?.asJsonArray ?: return emptyList()
+        return arr.mapNotNull { el ->
+            el.takeIf { it.isJsonObject }?.asJsonObject?.get("name")
+                ?.takeIf { !it.isJsonNull }?.asString?.takeIf { it.isNotBlank() }
+        }
     }
 
     // checkbox列の値。プロパティ自体が無い（DB側で未新設）場合もfalseを返す＝安全側
