@@ -74,7 +74,9 @@ object NotionClient {
         val notifyGroupRaw: String? = null, // 「通知グループ」セレクト列（手で付けた上書き）
         val tags: List<String> = emptyList(), // 「タグ」複数選択列
         val favoritePage: String? = null,   // 「お気に入りページ」セレクト列
-        val purpose: String? = null         // 「投資目的」セレクト列
+        val purpose: String? = null,        // 「投資目的」セレクト列
+        val valueFlag: String? = null,      // 「割安加点」セレクト列（v1.37・PC の notify_value が書く）
+        val valueFlagDate: String? = null   // 「割安加点の基準日」日付列
     )
 
     // 同期結果（成功/失敗とメッセージを呼び出し側へ返す）
@@ -340,7 +342,10 @@ object NotionClient {
                         notifyGroupRaw = selectName(props, PROP_NOTIFY_GROUP),
                         tags = multiSelectNames(props, "タグ"),
                         favoritePage = selectName(props, "お気に入りページ"),
-                        purpose = selectName(props, "投資目的")
+                        purpose = selectName(props, "投資目的"),
+                        // 割安の加点（v1.37）。PC の notify_value が書く列。未新設・空なら null＝表示しない
+                        valueFlag = selectName(props, "割安加点")?.takeIf { it.isNotBlank() },
+                        valueFlagDate = dateStart(props, "割安加点の基準日")
                     )
                 )
             }
@@ -407,5 +412,14 @@ object NotionClient {
         if (d.isJsonNull) return false
         val start = d.asJsonObject.get("start") ?: return false
         return !start.isJsonNull
+    }
+
+    // 日付列の開始日（YYYY-MM-DD）。列が無い・空なら null（v1.37 割安加点の基準日）
+    private fun dateStart(props: JsonObject, name: String): String? {
+        val p = prop(props, name) ?: return null
+        val d = p.get("date") ?: return null
+        if (d.isJsonNull) return null
+        val start = d.asJsonObject.get("start") ?: return null
+        return if (start.isJsonNull) null else start.asString.take(10)
     }
 }

@@ -46,6 +46,7 @@ import com.example.etfbuyalert.data.model.EtfState
 import com.example.etfbuyalert.data.repository.Settings
 import com.example.etfbuyalert.domain.AlertEngine
 import com.example.etfbuyalert.domain.AssetKind
+import com.example.etfbuyalert.domain.ValueFlag
 import com.example.etfbuyalert.domain.Freshness
 import com.example.etfbuyalert.domain.Money
 import com.example.etfbuyalert.domain.NewsWarning
@@ -581,9 +582,16 @@ private fun EtfCard(
                 }
             }
             // 2段目＝価格の補足（右寄せ・12sp）。1段目と横幅を取り合わないよう別の行にする
-            if (!priceInvalid) {
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-                    PriceSubLine(st)
+            // 割安の加点の札（v1.37）は、この段の空いている左端に置く（名前の段に入れると銘柄名が数文字まで縮んだ）。
+            // 知らせなので情報の札、要確認（数字がずれているおそれ）は色の無い札
+            val valueChip = ValueFlag.chip(st)
+            if (!priceInvalid || valueChip != null) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    if (valueChip != null) {
+                        ToneChip(valueChip, if (ValueFlag.isCaution(st)) Tone.NORMAL else Tone.INFO)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (!priceInvalid) PriceSubLine(st)
                 }
             }
             // 週足RSI（「RSI利確監視」=ONの銘柄のみ。閾値はAlertEngineが単一の真実の源）

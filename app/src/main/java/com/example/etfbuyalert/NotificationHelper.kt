@@ -112,7 +112,8 @@ object NotificationHelper {
         val order = listOf("損切り", "売り時", "ニュース警告", "深押し", "押し目", "過熱利確②", "過熱利確①", "順張り", "ステージ変化")
         val sorted = items.sortedBy { order.indexOf(it.category).let { i -> if (i < 0) order.size else i } }
         val title = "買い時アラート ${items.size}件"
-        val body = sorted.joinToString("\n") { "・${it.title}" }
+        // 割安の加点がある項目には「💹割安」を添える（v1.37。本文の加点の行は ValueFlag.noteLine が作る）
+        val body = sorted.joinToString("\n") { "・${it.title}" + com.example.etfbuyalert.domain.ValueFlag.bundleMark(it.message) }
         postNotification(context, CHANNEL_ALERT, title, body, BUNDLE_ID,
             NotificationCompat.PRIORITY_HIGH)
     }
