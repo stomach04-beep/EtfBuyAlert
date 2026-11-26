@@ -30,6 +30,11 @@ data class EtfState(
     val favoritePage: String? = null,    // Notion「お気に入りページ」列（楽天iSPEEDのページ割当）
     val purpose: String? = null,         // Notion「投資目的」列（配当成長 / 別枠 / 対象外）
 
+    // --- 割安の加点（v1.37）。PC の value-screen/notify_value.py が日本株の行に毎晩書く。表示は domain.ValueFlag ---
+    // 値の一覧はアプリで持ち直さず、Notion の文字をそのまま出す（同じ一覧を2か所に持つとズレる）
+    val valueFlag: String? = null,       // Notion「割安加点」列（両方／安い2割／ネットネット／要確認(分割)／要確認(税引前)。空＝当たらない）
+    val valueFlagDate: String? = null,   // Notion「割安加点の基準日」列（一覧の日付 YYYY-MM-DD）
+
     // --- Notionから同期した買い時ライン（通貨は銘柄による。円建てなら円）---
     val dipPrice: Double? = null,        // 買い時価格(押し目)  … 下抜けで通知
     val deepDipPrice: Double? = null,    // 買い増し価格(深押し) … 下抜けで通知

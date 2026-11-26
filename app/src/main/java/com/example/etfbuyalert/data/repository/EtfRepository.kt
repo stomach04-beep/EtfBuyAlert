@@ -18,6 +18,7 @@ import com.example.etfbuyalert.domain.Symbol
 import com.example.etfbuyalert.domain.Ma200Lines
 import com.example.etfbuyalert.domain.MorningSummary
 import com.example.etfbuyalert.domain.NewsWarning
+import com.example.etfbuyalert.domain.ValueFlag
 import com.example.etfbuyalert.domain.NotifyGroup
 import com.example.etfbuyalert.domain.SellRules
 import com.example.etfbuyalert.domain.WeeklyRsi
@@ -167,7 +168,8 @@ class EtfRepository(private val context: Context) {
                 for (a in keptAlerts) {
                     // 判定は済ませ（到達済みの印は進む）、オフのグループは鳴らす手前で落とす（v1.36）
                     if (!NotifyGroup.shouldNotify(kept, a.category, muted)) continue
-                    pending.add(NotificationHelper.AlertItem(a.category, a.title, a.message, st.ticker))
+                    // 割安の加点があれば通知文に1行添える（v1.37。割安専用の通知は作らない）
+                    pending.add(NotificationHelper.AlertItem(a.category, a.title, a.message + ValueFlag.noteLine(kept), st.ticker))
                 }
                 updated.add(kept)
                 continue
@@ -215,7 +217,8 @@ class EtfRepository(private val context: Context) {
                 // オフのグループは鳴らす手前で落とす（守りの通知は NotifyGroup が必ず通す）
                 if (!NotifyGroup.shouldNotify(s, a.category, muted)) continue
                 // ティッカーを添える＝1件通知をタップしたとき詳細画面へ直行できる（F2）
-                pending.add(NotificationHelper.AlertItem(a.category, a.title, a.message, s.ticker))
+                // 割安の加点があれば通知文に1行添える（v1.37。割安専用の通知は作らない）
+                pending.add(NotificationHelper.AlertItem(a.category, a.title, a.message + ValueFlag.noteLine(s), s.ticker))
             }
             updated.add(s)
         }
@@ -471,6 +474,9 @@ class EtfRepository(private val context: Context) {
                 notifyGroupRaw = n.notifyGroupRaw,
                 tags = n.tags,
                 favoritePage = n.favoritePage,
+                // 割安の加点（v1.37）。Notion の値をそのまま持つ（判定はPC側・表示は ValueFlag）
+                valueFlag = n.valueFlag,
+                valueFlagDate = n.valueFlagDate,
                 purpose = n.purpose,
                 // ライン計算方式=MA200 の行は、端末内で計算した値を優先する。
                 // 通常は書き戻し済みでNotionと同値だが、書き戻しが失敗した回や、
